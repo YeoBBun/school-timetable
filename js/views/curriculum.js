@@ -1,6 +1,5 @@
 // 단원 · 차시 (과목별 교육과정 목록)
 import { h, append, toast, showError, modal, confirmDialog } from '../ui.js';
-import { supabase } from '../db.js';
 import * as S from '../store.js';
 import { go } from '../app.js';
 
@@ -62,7 +61,7 @@ function editor(subj) {
   const renameUnit = async (oldUnit, newUnit) => {
     if (newUnit === oldUnit) return;
     try {
-      const { error } = await supabase.from('curriculum_items').update({ unit: newUnit }).eq('subject', subj).eq('unit', oldUnit);
+      const { error } = await S.db.from('curriculum_items').update({ unit: newUnit }).eq('subject', subj).eq('unit', oldUnit);
       if (error) throw error;
       await S.reload('curriculum_items');
     } catch (err) { showError(err); }
@@ -129,7 +128,7 @@ async function renumber(order) {
   const changed = rows.filter((r, i) => r.seq !== order[i].seq);
   if (!changed.length) return;
   try {
-    const { error } = await supabase.from('curriculum_items').upsert(changed);
+    const { error } = await S.db.from('curriculum_items').upsert(changed);
     if (error) throw error;
     await S.reload('curriculum_items');
   } catch (err) { showError(err); }

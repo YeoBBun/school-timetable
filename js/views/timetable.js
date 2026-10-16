@@ -2,7 +2,6 @@
 import { h, append, toast, showError, confirmDialog, WEEKDAYS, PALETTE, todayStr, fmtDateLong } from '../ui.js';
 import { showDate } from './today.js';
 import * as S from '../store.js';
-import { supabase } from '../db.js';
 import { go } from '../app.js';
 
 // 붓처럼 반을 고른 뒤 시간표 칸을 클릭(또는 드래그)해서 칠한다
@@ -62,7 +61,7 @@ function brushBar(classes) {
     if (!S.data.timetable_slots.length) return;
     if (!await confirmDialog('시간표의 모든 칸을 비울까요? (수업 기록은 그대로 남습니다)', { okLabel: '모두 비우기' })) return;
     try {
-      const { error } = await supabase.from('timetable_slots').delete().eq('user_id', S.session.user.id);
+      const { error } = await S.db.from('timetable_slots').delete().eq('user_id', S.session.user.id);
       if (error) throw error;
       await S.reload('timetable_slots');
     } catch (err) { showError(err); }
@@ -120,11 +119,11 @@ function grid(st) {
     pending.clear();
     try {
       if (upserts.length) {
-        const { error } = await supabase.from('timetable_slots').upsert(upserts, { onConflict: 'user_id,weekday,period' });
+        const { error } = await S.db.from('timetable_slots').upsert(upserts, { onConflict: 'user_id,weekday,period' });
         if (error) throw error;
       }
       if (deletes.length) {
-        const { error } = await supabase.from('timetable_slots').delete().in('id', deletes);
+        const { error } = await S.db.from('timetable_slots').delete().in('id', deletes);
         if (error) throw error;
       }
     } catch (err) { showError(err); }

@@ -2,6 +2,7 @@
 import { h, append, toast, showError, confirmDialog, fmtDateLong, todayStr, downloadText } from '../ui.js';
 import * as S from '../store.js';
 import { signOut } from '../app.js';
+import * as G from '../google.js';
 
 export default function render(root) {
   const st = S.settings();
@@ -37,6 +38,22 @@ export default function render(root) {
     downloadText(`진도관리-백업-${todayStr()}.json`, json, 'application/json');
   };
 
+  const restore = () => {
+    const input = h('input', { type: 'file', accept: '.json,application/json' });
+    input.addEventListener('change', async () => {
+      const file = input.files[0];
+      if (!file) return;
+      try {
+        const json = JSON.parse(await file.text());
+        if (!(json.tables || json.classes)) throw new Error('진도관리 백업 파일이 아닙니다.');
+        if (!await confirmDialog(`'${file.name}' 백업으로 지금 데이터를 모두 바꿀까요?\n지금 있는 기록은 사라집니다.`, { okLabel: '불러오기' })) return;
+        S.importBackup(json);
+        toast('백업을 불러왔습니다.', 'ok');
+      } catch (err) { showError(err); }
+    });
+    input.click();
+  };
+
   append(root, 
     h('div', { class: 'page-head' }, h('h2', {}, '설정')),
     h('div', { class: 'cols' },
@@ -60,8 +77,11 @@ export default function render(root) {
           h('div', { class: 'row' }, h('label', {}, '하루 교시 수', periods), h('label', {}, '수업 요일', weekdays))),
         h('div', { class: 'card' },
           h('h3', {}, '데이터'),
-          h('p', { class: 'muted small', style: { marginTop: 0 } }, '진도·시간표·자료 목록을 JSON 파일로 내려받습니다. (업로드한 파일 자체는 포함되지 않습니다)'),
-          h('button', { class: 'btn', onClick: backup }, '백업 파일 내려받기')),
+          h('p', { class: 'muted small', style: { marginTop: 0 } }, "모든 기록은 구글 드라이브 '진도관리' 폴더의 '진도관리-데이터.json' 파일에 자동으로 저장됩니다. 따로 백업해 두려면 아래에서 내려받으세요. (수업 자료 파일은 '수업 자료' 폴더에 있습니다)"),
+          h('div', { class: 'row' },
+            h('button', { class: 'btn', onClick: backup }, '백업 파일 내려받기'),
+            h('button', { class: 'btn', onClick: restore }, '백업 파일 불러오기'),
+            S.drive.rootId ? h('a', { class: 'btn', href: G.folderUrl(S.drive.rootId), target: '_blank', rel: 'noopener' }, '드라이브 폴더 열기') : null)),
         h('div', { class: 'card' },
           h('h3', {}, '계정'),
           h('p', { style: { marginTop: 0 } }, S.session.user?.email),

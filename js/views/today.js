@@ -1,7 +1,6 @@
 // 오늘 수업: 시간표에 따라 그날의 수업이 나오고, 각 수업의 진도·메모·자료를 기록한다
 import { h, append, toast, showError, modal, confirmDialog, todayStr, addDays, weekdayOf, fmtDateLong, fmtMD, mondayOf, WEEKDAYS, classChip } from '../ui.js';
 import * as S from '../store.js';
-import { supabase } from '../db.js';
 import { go } from '../app.js';
 import { openMaterial, openMaterialPicker } from './materials.js';
 
@@ -265,10 +264,6 @@ function newItemDialog(cls, onCreated) {
 
 // 이날 시간표 바꾸기: 교시마다 '주간 시간표대로 / 수업 없음 / 다른 반'을 고른다
 function changeDialog(d) {
-  if (S.missingTables.has('timetable_changes')) {
-    toast('시간표 변경 기능을 쓰려면 Supabase SQL Editor에서 supabase/migration_01_timetable_changes.sql 을 먼저 실행하세요.', 'error');
-    return;
-  }
   const st = S.settings();
   const wd = weekdayOf(d);
   const classes = S.sortedClasses();
@@ -305,11 +300,11 @@ function changeDialog(d) {
       upserts.push({ user_id: S.session.user.id, date: d, period: p, class_id: classId, note: note.value.trim() });
     }
     if (upserts.length) {
-      const { error } = await supabase.from('timetable_changes').upsert(upserts, { onConflict: 'user_id,date,period' });
+      const { error } = await S.db.from('timetable_changes').upsert(upserts, { onConflict: 'user_id,date,period' });
       if (error) throw error;
     }
     if (deletes.length) {
-      const { error } = await supabase.from('timetable_changes').delete().in('id', deletes);
+      const { error } = await S.db.from('timetable_changes').delete().in('id', deletes);
       if (error) throw error;
     }
     await S.reload('timetable_changes');

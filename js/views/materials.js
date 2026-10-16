@@ -1,6 +1,6 @@
-// 수업 자료: 파일 업로드(Supabase Storage) · 링크 · 검색 · 수업에 첨부
+// 수업 자료: 구글 드라이브 '진도관리/수업 자료' 폴더에 업로드 · 링크 · 검색 · 수업에 첨부
 import { h, append, toast, showError, modal, confirmDialog, fmtSize, fmtMD } from '../ui.js';
-import { supabase, BUCKET, MAX_FILE_BYTES, STORAGE_QUOTA_BYTES } from '../db.js';
+import * as G from '../google.js';
 import * as S from '../store.js';
 import { showDate } from './today.js';
 
@@ -10,41 +10,30 @@ const filter = { subject: '', itemId: '', q: '' };
 
 export async function uploadFiles(files, { subject = null, itemId = null } = {}) {
   const list = [...files];
-  const tooBig = list.filter((f) => f.size > MAX_FILE_BYTES);
-  if (tooBig.length) {
-    toast(`50MB가 넘는 파일은 올릴 수 없습니다: ${tooBig.map((f) => f.name).join(', ')}\n큰 파일은 Google Drive 등에 올리고 '링크 추가'를 사용하세요.`, 'error');
-  }
-  const ok = list.filter((f) => f.size <= MAX_FILE_BYTES);
   const created = [];
-  for (let i = 0; i < ok.length; i++) {
-    const f = ok[i];
-    const t = toast(`업로드 중 (${i + 1}/${ok.length}) ${f.name}`);
-    // 저장소 경로에는 한글을 쓸 수 없어서 무작위 이름을 쓰고, 원래 이름은 DB에 저장
-    const ext = (f.name.match(/\.[A-Za-z0-9]{1,8}$/) || [''])[0].toLowerCase();
-    const path = `${S.session.user.id}/${crypto.randomUUID()}${ext}`;
-    const { error } = await supabase.storage.from(BUCKET).upload(path, f, { contentType: f.type || undefined });
-    t.remove();
-    if (error) { showError(new Error(`${f.name}: ${error.message}`)); continue; }
-    const { data, error: e2 } = await supabase.from('materials').insert({
-      name: f.name, kind: 'file', storage_path: path, size: f.size, mime: f.type || null, subject,
-    }).select();
-    if (e2) { showError(e2); continue; }
-    created.push(data[0]);
+  for (let i = 0; i < list.length; i++) {
+    const f = list[i];
+    const t = toast(`드라이브에 올리는 중 (${i + 1}/${list.length}) ${f.name}`);
+    try {
+      const up = await G.uploadFile(f, S.drive.materialsId, (p) => { t.textContent = `드라이브에 올리는 중 (${i + 1}/${list.length}) ${f.name} · ${Math.round(p * 100)}%`; });
+      created.push(await S.insert('materials', {
+        name: f.name, kind: 'file', drive_id: up.id, url: up.webViewLink || G.fileViewUrl(up.id), size: f.size, mime: f.type || null, subject,
+      }));
+    } catch (err) {
+      showError(new Error(`${f.name}: ${err.message}`));
+    } finally {
+      t.remove();
+    }
   }
-  await S.reload('materials');
   await S.linkItemMaterials(itemId, created.map((m) => m.id));
-  if (created.length) toast(`${created.length}개 파일을 올렸습니다.`, 'ok');
+  if (created.length) toast(`${created.length}개 파일을 드라이브에 올렸습니다.`, 'ok');
   return created;
 }
 
-export async function openMaterial(m, download = false) {
+export function openMaterial(m, download = false) {
   if (m.kind === 'link') { window.open(m.url, '_blank', 'noopener'); return; }
-  // 팝업 차단을 피하려고 창을 먼저 연 뒤 주소를 넣는다
-  const w = download ? null : window.open('', '_blank');
-  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(m.storage_path, 60 * 10, download ? { download: m.name } : undefined);
-  if (error) { w?.close(); return showError(error); }
-  if (w) w.location.href = data.signedUrl;
-  else location.href = data.signedUrl;
+  if (!m.drive_id) { toast('파일 위치를 찾을 수 없습니다.', 'error'); return; }
+  window.open(download ? G.fileDownloadUrl(m.drive_id) : (m.url || G.fileViewUrl(m.drive_id)), '_blank', 'noopener');
 }
 
 export function linkDialog({ subject = null, itemId = null } = {}) {
@@ -72,14 +61,11 @@ export function linkDialog({ subject = null, itemId = null } = {}) {
 
 async function deleteMaterial(m) {
   const used = S.itemsOfMaterial(m.id).length + S.data.lesson_materials.filter((lm) => lm.material_id === m.id).length;
-  const ok = await confirmDialog(`'${m.name}'을(를) 삭제할까요?${used ? `\n붙어 있던 차시 · 수업 ${used}곳에서도 빠집니다.` : ''}\n삭제한 파일은 되돌릴 수 없습니다.`);
+  const ok = await confirmDialog(`'${m.name}'을(를) 삭제할까요?${used ? `\n붙어 있던 차시 · 수업 ${used}곳에서도 빠집니다.` : ''}\n파일은 구글 드라이브 휴지통으로 이동합니다 (30일 안에 되살릴 수 있음).`);
   if (!ok) return;
   try {
-    if (m.kind === 'file' && m.storage_path) {
-      const { error } = await supabase.storage.from(BUCKET).remove([m.storage_path]);
-      if (error) throw error;
-    }
-    await S.remove('materials', { id: m.id }, ['item_materials', 'lesson_materials']);
+    if (m.kind === 'file' && m.drive_id) await G.trashFile(m.drive_id);
+    await S.remove('materials', { id: m.id });
     toast('삭제했습니다.');
   } catch (err) { showError(err); }
 }
@@ -105,7 +91,7 @@ function fileInput(onFiles) {
     onDragover: (e) => { e.preventDefault(); zone.classList.add('over'); },
     onDragleave: () => zone.classList.remove('over'),
     onDrop: (e) => { e.preventDefault(); zone.classList.remove('over'); if (e.dataTransfer.files.length) onFiles(e.dataTransfer.files); },
-  }, '여기로 파일을 끌어다 놓거나 클릭해서 선택 (파일당 최대 50MB)', input);
+  }, '여기로 파일을 끌어다 놓거나 클릭해서 선택 (구글 드라이브에 저장됩니다)', input);
   return zone;
 }
 
@@ -191,7 +177,6 @@ export default function render(root) {
   if (filter.itemId && !S.itemById(filter.itemId)) filter.itemId = '';
 
   const used = S.data.materials.reduce((sum, m) => sum + (m.size || 0), 0);
-  const pct = Math.min(100, (used / STORAGE_QUOTA_BYTES) * 100);
   const rerender = () => { root.replaceChildren(); render(root); };
 
   const uploadBar = h('div', { class: 'card' },
@@ -228,9 +213,8 @@ export default function render(root) {
   append(root, 
     h('div', { class: 'page-head' },
       h('h2', {}, '수업 자료'),
-      h('div', { class: 'quota' },
-        h('div', { class: 'small muted' }, `사용 중 ${fmtSize(used)} / ${fmtSize(STORAGE_QUOTA_BYTES)} (무료 플랜 기준)`),
-        h('div', { class: 'bar' }, h('div', { style: { width: `${pct}%`, background: pct > 85 ? 'var(--danger)' : 'var(--primary)' } })))),
+      h('span', { class: 'small muted' }, `자료 ${S.data.materials.length}개 · ${fmtSize(used)}`),
+      S.drive.materialsId ? h('a', { class: 'btn', href: G.folderUrl(S.drive.materialsId), target: '_blank', rel: 'noopener' }, '드라이브 폴더 열기') : null),
     uploadBar,
     h('div', { class: 'row', style: { margin: '20px 0 10px' } },
       h('strong', {}, filter.subject ? `${filter.subject}${filter.itemId ? ` · ${S.itemById(filter.itemId)?.title}` : ''} 자료` : '모든 자료'),

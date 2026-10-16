@@ -278,3 +278,5 @@ body.painting { cursor: crosshair; user-select: none; }
 .change-row.changed { background: var(--primary-soft); }
 .change-row .period-lbl { width: 44px; }
 .change-row select { width: 260px; }
+.sync-saving .dot { background: #fbbf24; }
+.sync-auth .dot { background: #f87171; }

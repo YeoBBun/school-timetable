@@ -1,4 +1,4 @@
-import { supabase, isConfigured } from './db.js';
+import * as G from './google.js';
 import * as S from './store.js';
 import { h, toast, showError } from './ui.js';
 import today from './views/today.js';
@@ -31,11 +31,24 @@ function currentRoute() {
   return ROUTES.find((r) => r.path === path) || ROUTES[0];
 }
 
+const SYNC_LABEL = { on: '드라이브에 저장됨', saving: '저장 중…', error: '저장 실패 · 다시 시도 중', auth: '구글 다시 연결 필요', off: '연결 중…' };
+
 function syncBadge() {
   const st = S.sync.status;
-  const label = st === 'on' ? '실시간 동기화 중' : st === 'error' ? '동기화 연결 끊김' : '연결 중…';
-  return h('div', { class: `sync sync-${st}`, id: 'sync-badge', title: '다른 기기에서 바꾼 내용이 자동으로 반영됩니다' },
-    h('span', { class: 'dot' }), label);
+  const badge = h('div', { class: `sync sync-${st}`, id: 'sync-badge', title: S.sync.message || '구글 드라이브의 진도관리 폴더에 자동으로 저장됩니다' },
+    h('span', { class: 'dot' }), SYNC_LABEL[st] || st);
+  if (st !== 'auth') return badge;
+  return h('div', { id: 'sync-badge' }, badge,
+    h('button', { class: 'btn btn-sm btn-primary', style: { marginTop: '6px' }, onClick: reconnect }, '다시 연결'));
+}
+
+// 로그인이 만료되면(약 1시간) 버튼을 눌러 다시 연결하고 밀린 저장을 이어서 한다
+async function reconnect() {
+  try {
+    await G.signIn();
+    await S.resume();
+    toast('다시 연결했습니다.', 'ok');
+  } catch (err) { showError(err); }
 }
 
 function shell() {
@@ -97,77 +110,79 @@ window.addEventListener('hashchange', () => {
 S.onChange(render);
 
 // ---- 로그인 ----
-function loginView() {
-  const email = h('input', { type: 'email', placeholder: '이메일', autocomplete: 'username', required: true });
-  const password = h('input', { type: 'password', placeholder: '비밀번호', autocomplete: 'current-password', required: true });
-  const btn = h('button', { class: 'btn btn-primary btn-block', type: 'submit' }, '로그인');
-  const form = h('form', {
-    class: 'login-card',
-    onSubmit: async (e) => {
-      e.preventDefault();
+function loginView(message) {
+  const btn = h('button', {
+    class: 'btn btn-primary btn-block',
+    onClick: async () => {
       btn.disabled = true;
-      btn.textContent = '로그인 중…';
-      const { error } = await supabase.auth.signInWithPassword({ email: email.value.trim(), password: password.value });
-      btn.disabled = false;
-      btn.textContent = '로그인';
-      if (error) toast(error.message === 'Invalid login credentials' ? '이메일 또는 비밀번호가 올바르지 않습니다.' : error.message, 'error');
+      btn.textContent = '구글 로그인 창을 확인하세요…';
+      try {
+        await G.signIn();
+        await onSignedIn();
+      } catch (err) {
+        showError(err);
+        btn.disabled = false;
+        btn.textContent = '구글 계정으로 로그인';
+      }
     },
-  },
-  h('h1', {}, '진도관리'),
-  h('p', { class: 'muted' }, '반별 진도 · 시간표 · 수업 자료'),
-  h('label', {}, '이메일', email),
-  h('label', {}, '비밀번호', password),
-  btn);
-  app.replaceChildren(h('div', { class: 'login-wrap' }, form));
+  }, '구글 계정으로 로그인');
+  app.replaceChildren(h('div', { class: 'login-wrap' },
+    h('div', { class: 'login-card' },
+      h('h1', {}, '진도관리'),
+      h('p', { class: 'muted' }, '반별 진도 · 시간표 · 수업 자료'),
+      message ? h('div', { class: 'banner', style: { margin: 0 } }, message) : null,
+      btn,
+      h('p', { class: 'muted small' }, "모든 기록과 수업 자료는 내 구글 드라이브의 '진도관리' 폴더에 저장됩니다. 앱은 그 폴더에만 접근합니다."))));
   viewEl = null;
-  email.focus();
 }
 
 function notConfiguredView() {
   app.replaceChildren(h('div', { class: 'login-wrap' },
     h('div', { class: 'login-card' },
       h('h1', {}, '설정이 필요합니다'),
-      h('p', {}, 'js/config.js 파일에 Supabase 프로젝트 URL과 anon 키를 입력하세요.'),
+      h('p', {}, 'js/config.js 파일에 구글 OAuth 클라이언트 ID를 입력하세요.'),
       h('p', { class: 'muted' }, '자세한 방법은 README.md 를 참고하세요.'))));
 }
 
-async function onSignedIn(user) {
-  if (S.session.user?.id === user.id) return;
-  S.session.user = user;
-  app.replaceChildren(h('div', { class: 'loading' }, '데이터 불러오는 중…'));
+async function onSignedIn() {
+  app.replaceChildren(h('div', { class: 'loading' }, '구글 드라이브에서 불러오는 중…'));
   viewEl = null;
   try {
+    const email = await G.userEmail();
+    S.session.user = { id: 'me', email };
     await S.loadAll();
-    S.startRealtime();
+    S.startSync();
+    render();
   } catch (err) {
-    showError(err);
-    if (/relation .* does not exist|Could not find the table/i.test(err.message)) {
-      toast('DB 테이블이 없습니다. supabase/schema.sql 을 먼저 실행하세요.', 'error');
-    }
+    S.session.user = null;
+    console.error(err);
+    loginView(err.code === 'auth' ? '구글 로그인이 만료되었습니다. 다시 로그인해 주세요.' : `불러오지 못했습니다: ${err.message}`);
   }
-  render();
 }
 
-function onSignedOut() {
+export async function signOut() {
+  if (S.hasUnsaved()) await S.save();
+  G.signOut();
   S.session.user = null;
-  S.stopRealtime();
+  S.stopSync();
   S.clearData();
   loginView();
 }
 
-export async function signOut() {
-  await supabase.auth.signOut();
-}
+// 저장이 끝나기 전에 창을 닫으려 하면 경고
+window.addEventListener('beforeunload', (e) => {
+  if (S.session.user && S.hasUnsaved()) { e.preventDefault(); e.returnValue = ''; }
+});
 
 async function start() {
-  if (!isConfigured) return notConfiguredView();
-  const { data } = await supabase.auth.getSession();
-  if (data.session) await onSignedIn(data.session.user);
+  if (!G.isConfigured) return notConfiguredView();
+  try {
+    await G.init();
+  } catch (err) {
+    return loginView(err.message);
+  }
+  if (G.hasToken()) await onSignedIn();
   else loginView();
-  supabase.auth.onAuthStateChange((event, sess) => {
-    if (sess?.user) onSignedIn(sess.user);
-    else if (event === 'SIGNED_OUT') onSignedOut();
-  });
 }
 
 start();
