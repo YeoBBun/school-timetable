@@ -39,7 +39,7 @@ serve.py            캐시 끈 로컬 서버 → http://localhost:5500
 - 화면 갱신: 다른 기기에서 온 변경(remote)은 사용자가 입력 중이거나 모달이 열려 있으면 미뤘다가 반영합니다.
 
 ## 현재 상태 (2026-10-16 기준)
-- main 브랜치 `760980c` 까지 푸시되어 있고, 로컬 PC 에서 실제 구글 로그인 · 드라이브 저장 · 파일 업로드까지 확인했습니다.
+- main 브랜치에 모든 작업이 합쳐져 있고(GitHub PR 로 병합), 로컬 PC 에서 실제 구글 로그인 · 드라이브 저장 · 파일 업로드까지 확인했습니다.
 - 사용자 드라이브에 101~105반(국어)과 주간 시간표 20칸이 이미 저장되어 있습니다.
 - OAuth 앱은 **테스트 모드**이고, 테스트 사용자는 사용자 본인 Gmail 하나입니다. 승인된 JavaScript 원본: `http://localhost:5500`, `https://yeobbun.github.io`.
 - 노션에도 비슷한 구조의 비공개 페이지 "진도관리 (노션 버전)"를 만들어 두었습니다(비교용, 이 저장소와 연결 안 됨).
@@ -48,7 +48,7 @@ serve.py            캐시 끈 로컬 서버 → http://localhost:5500
 1. **보안 보강** — 끝남
    - 링크 주소 검사: linkDialog · editDialog 둘 다 `normalizeUrl()` 로 `http(s)://` 가 아니면 `https://` 를 붙입니다.
    - 공용 PC 모드: 사용자가 학교 PC도 혼자 쓴다고 해서 **만들지 않기로** 했습니다.
-2. **GitHub Pages 배포**: Settings → Pages → Branch `main`, `/ (root)` → `https://yeobbun.github.io/timetable/`. 사용자가 직접 눌러야 합니다.
+2. **GitHub Pages 배포** — 사용자가 켰습니다(main, `/ (root)`). 주소: `https://yeobbun.github.io/timetable/`. main 에 합치면 몇 분 뒤 반영됩니다.
 3. 쓰다가 요청이 오면 추가로 개발합니다.
 
 ## 작업할 때
