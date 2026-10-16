@@ -36,6 +36,13 @@ export function openMaterial(m, download = false) {
   window.open(download ? G.fileDownloadUrl(m.drive_id) : (m.url || G.fileViewUrl(m.drive_id)), '_blank', 'noopener');
 }
 
+// 링크 주소 정리: http(s):// 로 시작하지 않으면 https:// 를 붙임(javascript: 같은 주소 차단)
+function normalizeUrl(v) {
+  const u = v.trim();
+  if (!u) return '';
+  return /^https?:\/\//i.test(u) ? u : `https://${u}`;
+}
+
 export function linkDialog({ subject = null, itemId = null } = {}) {
   return new Promise((resolve) => {
     const url = h('input', { type: 'url', placeholder: 'https://…' });
@@ -46,9 +53,8 @@ export function linkDialog({ subject = null, itemId = null } = {}) {
       {
         label: '추가', primary: true,
         onClick: async () => {
-          let u = url.value.trim();
+          const u = normalizeUrl(url.value);
           if (!u) return false;
-          if (!/^https?:\/\//i.test(u)) u = `https://${u}`;
           result = await S.insert('materials', { name: name.value.trim() || u, kind: 'link', url: u, subject });
           await S.linkItemMaterials(itemId, [result.id]);
         },
@@ -283,7 +289,10 @@ function editDialog(m) {
       label: '저장', primary: true,
       onClick: async () => {
         const patch = { name: name.value.trim() || m.name, subject: state.subject || null };
-        if (url) patch.url = url.value.trim();
+        if (url) {
+          patch.url = normalizeUrl(url.value);
+          if (!patch.url) { toast('주소를 입력하세요.'); return false; }
+        }
         await S.update('materials', m.id, patch);
         for (const id of before) if (!state.itemIds.has(id)) await S.remove('item_materials', { item_id: id, material_id: m.id });
         for (const id of state.itemIds) if (!before.has(id)) await S.linkItemMaterials(id, [m.id]);
