@@ -61,7 +61,7 @@ function shell() {
     nav,
     h('div', { class: 'side-footer' },
       syncBadge(),
-      h('div', { class: 'muted small' }, S.session.user?.email || '')));
+      h('div', { class: 'muted small', id: 'user-email' }, S.session.user?.email || '')));
   app.replaceChildren(h('div', { class: 'layout' }, side, viewEl));
 }
 
@@ -145,12 +145,24 @@ function notConfiguredView() {
 }
 
 async function onSignedIn() {
+  // 브라우저 사본으로 이미 화면을 보여 주고 있으면 그대로 두고 뒤에서 합친다
+  if (S.session.user) {
+    G.userEmail().then((email) => {
+      S.session.user.email = email;
+      const el = document.getElementById('user-email');
+      if (el) el.textContent = email;
+    }).catch(() => {});
+    try { await S.loadAll(); } catch (err) { S.handleSyncError(err); }
+    return;
+  }
   app.replaceChildren(h('div', { class: 'loading' }, '구글 드라이브에서 불러오는 중…'));
   viewEl = null;
   try {
-    const email = await G.userEmail();
-    S.session.user = { id: 'me', email };
-    await S.loadAll();
+    // 이메일 확인과 드라이브 읽기를 동시에
+    S.session.user = { id: 'me', email: '' };
+    const [email] = await Promise.all([G.userEmail(), S.loadAll()]);
+    S.session.user.email = email;
+    viewEl = null; // 이메일이 들어간 화면으로 다시 그리기
     S.startSync();
     render();
   } catch (err) {
@@ -176,12 +188,18 @@ window.addEventListener('beforeunload', (e) => {
 
 async function start() {
   if (!G.isConfigured) return notConfiguredView();
-  try {
-    await G.init();
-  } catch (err) {
-    return loginView(err.message);
+  // 지난번 데이터가 이 PC에 있으면 구글 연결을 기다리지 않고 바로 보여 준다
+  const cached = S.loadCache();
+  if (cached) {
+    S.session.user = { id: 'me', email: cached.email };
+    render();
+    S.startSync();
   }
+  let initErr = null;
+  try { await G.init(); } catch (err) { initErr = err; }
+  if (initErr && !cached) return loginView(initErr.message);
   if (G.hasToken()) await onSignedIn();
+  else if (cached) (initErr ? S.handleSyncError(initErr) : S.needAuth());
   else loginView();
 }
 

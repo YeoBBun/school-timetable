@@ -30,6 +30,7 @@ serve.py            캐시 끈 로컬 서버 → http://localhost:5500
 - **기기 간 병합**: 행마다 `_u`(마지막 수정 ms)를 두고, 지운 행은 `tomb[table][key] = 지운 시각`으로 기억합니다(90일 보관). 저장 직전 드라이브 파일 version 이 바뀌어 있으면 먼저 합치고 씁니다. 30초 폴링과 창 포커스 때도 확인합니다.
 - 기본키가 id 가 아닌 테이블: item_materials(item_id, material_id), lesson_materials(lesson_id, material_id), settings(user_id). user_id 는 항상 `'me'` 입니다.
 - 삭제 연쇄(cascadeDelete): 반 → 시간표·변경·수업기록, 수업기록 → lesson_materials, 자료 → 연결들, 차시 → item_materials(+ 수업기록의 차시는 null 로).
+- **브라우저 사본(빠른 시작)**: 마지막 데이터와 드라이브 파일 id 를 localStorage `jindo.cache` 에 둡니다. 켜면 사본으로 화면부터 그리고(배지 "연결 중…"), `loadAll()` 이 드라이브 파일을 읽어 `applyRemote` 로 합칩니다. 아는 파일 id 가 있으면 요청 2번(fileMeta → readJson), 없으면 폴더 찾기부터 합니다. 사본의 `dirty` 가 true 면 합친 뒤 저장합니다. 60일 넘은 사본은 버립니다(지운 기록 90일보다 짧게). 로그아웃하면 지웁니다. 토큰이 만료돼도 사본이 있으면 로그인 화면 대신 앱을 보여 주고 배지에 **다시 연결**을 띄웁니다.
 - 로그인 토큰은 약 1시간 동안 localStorage 에 둡니다. 만료되면 AuthError → 배지에 **다시 연결** 버튼이 뜨고, 누르면 `S.resume()` 으로 밀린 저장을 이어서 합니다.
 
 ### 주요 기능 규칙
