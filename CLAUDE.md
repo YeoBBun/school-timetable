@@ -45,9 +45,9 @@ serve.py            캐시 끈 로컬 서버 → http://localhost:5500
 - 노션에도 비슷한 구조의 비공개 페이지 "진도관리 (노션 버전)"를 만들어 두었습니다(비교용, 이 저장소와 연결 안 됨).
 
 ## 남은 일 / 사용자에게 제안해 둔 것
-1. **보안 보강** (사용자 답을 기다리는 중)
-   - 공용 PC 모드: 창을 닫으면 로그아웃되도록 토큰을 sessionStorage 에 두는 옵션(설정 화면에서 켜기).
-   - `views/materials.js` 의 editDialog 에서 링크 URL 이 `http(s)://` 로 시작하는지 검사합니다(linkDialog 는 이미 검사함).
+1. **보안 보강** — 끝남
+   - 링크 주소 검사: linkDialog · editDialog 둘 다 `normalizeUrl()` 로 `http(s)://` 가 아니면 `https://` 를 붙입니다.
+   - 공용 PC 모드: 사용자가 학교 PC도 혼자 쓴다고 해서 **만들지 않기로** 했습니다.
 2. **GitHub Pages 배포**: Settings → Pages → Branch `main`, `/ (root)` → `https://yeobbun.github.io/timetable/`. 사용자가 직접 눌러야 합니다.
 3. 쓰다가 요청이 오면 추가로 개발합니다.
 
