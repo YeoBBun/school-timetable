@@ -38,11 +38,12 @@ function saveToken() {
 }
 
 export async function init() {
-  await loadScript();
+  // 토큰부터 읽어 둔다(스크립트를 못 받아도 남은 토큰으로 드라이브는 쓸 수 있게)
   try {
     const t = JSON.parse(localStorage.getItem(TOKEN_KEY) || 'null');
     if (t && t.expires_at > Date.now() + 60_000) token = t;
   } catch { /* 무시 */ }
+  await loadScript();
 }
 
 export const hasToken = () => !!token && token.expires_at > Date.now() + 30_000;
@@ -136,6 +137,12 @@ export async function findFile(name, parentId) {
 export async function fileVersion(fileId) {
   const res = await api(`${API}/files/${fileId}?fields=version`);
   return (await res.json()).version;
+}
+
+// 버전과 휴지통 여부 (없는 파일이면 status 404 오류)
+export async function fileMeta(fileId) {
+  const res = await api(`${API}/files/${fileId}?fields=version,trashed`);
+  return res.json();
 }
 
 export async function readJson(fileId) {

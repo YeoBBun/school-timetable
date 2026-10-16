@@ -1,5 +1,6 @@
 // 데이터 저장소: 모든 데이터를 메모리에 두고, 구글 드라이브의 '진도관리/진도관리-데이터.json' 파일 하나에 저장한다.
 // 다른 기기에서 바꾼 내용은 30초마다(또는 창으로 돌아올 때) 드라이브 파일을 확인해서 합친다.
+// 켤 때 기다리지 않도록 마지막 데이터를 이 PC 브라우저에 사본으로 두고(로그아웃하면 지움), 화면부터 보여 준 뒤 드라이브와 합친다.
 // 합칠 때는 항목마다 마지막으로 바뀐 시각(_u)이 더 늦은 쪽을 남기고, 지운 항목은 지운 시각(tomb)으로 기억한다.
 import * as G from './google.js';
 
@@ -7,6 +8,8 @@ export const TABLES = ['classes', 'curriculum_items', 'timetable_slots', 'timeta
 const DATA_FILE = '진도관리-데이터.json';
 const POLL_MS = 30_000;
 const TOMB_KEEP_MS = 90 * 24 * 3600 * 1000;
+const CACHE_KEY = 'jindo.cache';
+const CACHE_MAX_AGE = 60 * 24 * 3600 * 1000; // 지운 기록(90일)보다 짧게: 오래된 사본이 지운 항목을 되살리지 않도록
 
 // 기본키가 id 가 아닌 테이블
 const KEYS = { item_materials: ['item_id', 'material_id'], lesson_materials: ['lesson_id', 'material_id'], settings: ['user_id'] };
@@ -49,6 +52,8 @@ let dirty = false;
 let saving = false;
 let saveTimer = null;
 let pollTimer = null;
+let loaded = false; // 이번에 드라이브 파일을 한 번이라도 읽었는지
+let loading = null;
 
 function snapshot() {
   const cutoff = now() - TOMB_KEEP_MS;
@@ -79,25 +84,84 @@ function applyRemote(remote) {
   }
 }
 
-export async function loadAll() {
-  const folders = await G.ensureFolders();
-  drive.rootId = folders.root;
-  drive.materialsId = folders.materials;
-  const file = await G.findFile(DATA_FILE, drive.rootId);
-  if (file) {
-    drive.fileId = file.id;
-    const remote = await G.readJson(file.id);
-    for (const t of TABLES) data[t] = remote?.tables?.[t] || [];
-    tomb = Object.fromEntries(TABLES.map((t) => [t, remote?.tomb?.[t] || {}]));
-    remoteVersion = await G.fileVersion(file.id);
-  } else {
-    resetTables();
-    const created = await G.writeJson({ name: DATA_FILE, parentId: drive.rootId, data: snapshot() });
-    drive.fileId = created.id;
-    remoteVersion = created.version;
+// 지난번에 쓰던 데이터 파일이 그대로 있으면 그 버전, 없거나 휴지통이면 null
+async function knownFileVersion() {
+  if (!drive.fileId) return null;
+  try {
+    const meta = await G.fileMeta(drive.fileId);
+    return meta.trashed ? null : meta.version;
+  } catch (err) {
+    if (err.status === 404) return null;
+    throw err;
   }
-  setStatus('on');
-  emit();
+}
+
+// 드라이브 파일을 읽어 지금 데이터(브라우저 사본)와 합친다
+export function loadAll() {
+  loading ||= (async () => {
+    let version = await knownFileVersion();
+    if (version == null) {
+      const folders = await G.ensureFolders();
+      drive.rootId = folders.root;
+      drive.materialsId = folders.materials;
+      const file = await G.findFile(DATA_FILE, drive.rootId);
+      drive.fileId = file?.id || null;
+      version = file?.version ?? null;
+    } else {
+      // 폴더가 지워졌을 때를 대비해 뒤에서 다시 확인만 한다(기다리지 않음)
+      G.ensureFolders().then((f) => { drive.rootId = f.root; drive.materialsId = f.materials; writeCache(); }).catch(() => {});
+    }
+    if (drive.fileId) {
+      // 버전을 먼저 받고 내용을 읽어야, 그사이 다른 기기가 저장해도 다음 확인 때 놓치지 않는다
+      applyRemote(await G.readJson(drive.fileId));
+      remoteVersion = version;
+    } else {
+      const created = await G.writeJson({ name: DATA_FILE, parentId: drive.rootId, data: snapshot() });
+      drive.fileId = created.id;
+      remoteVersion = created.version;
+    }
+    loaded = true;
+    writeCache();
+    emit(true);
+    if (dirty) await save(); // 사본에 밀린 수정이 있으면 이어서 저장
+    else setStatus('on');
+  })().finally(() => { loading = null; });
+  return loading;
+}
+
+// ---- 이 PC 브라우저의 사본 ----
+function writeCache() {
+  if (!session.user) return;
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ at: now(), email: session.user.email, drive, dirty: dirty || saving, tables: data, tomb }));
+  } catch { /* 저장 불가 환경이면 사본 없이 동작 */ }
+}
+
+// 사본이 있으면 메모리에 올리고 이메일을 돌려준다
+export function loadCache() {
+  try {
+    const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
+    if (!c?.tables || now() - c.at > CACHE_MAX_AGE) return null;
+    for (const t of TABLES) data[t] = c.tables[t] || [];
+    tomb = Object.fromEntries(TABLES.map((t) => [t, c.tomb?.[t] || {}]));
+    Object.assign(drive, c.drive);
+    dirty = !!c.dirty;
+    return { email: c.email || '' };
+  } catch {
+    return null;
+  }
+}
+
+// 저장 대기 중에 창을 닫아도 사본에는 남도록
+window.addEventListener('pagehide', () => { if (dirty || saving) writeCache(); });
+
+export function clearCache() {
+  try { localStorage.removeItem(CACHE_KEY); } catch { /* 무시 */ }
+}
+
+// 구글 연결이 끊긴 채로 사본만 보여 줄 때
+export function needAuth() {
+  setStatus('auth', '구글 연결이 만료되었습니다. 다시 연결해 주세요.');
 }
 
 function scheduleSave() {
@@ -108,6 +172,9 @@ function scheduleSave() {
 }
 
 export async function save() {
+  writeCache();
+  // 드라이브를 아직 못 읽었으면 읽은 뒤(loadAll 끝에서) 저장한다
+  if (!loaded) { if (!G.hasToken()) needAuth(); return; }
   if (saving || !drive.fileId) return;
   saving = true;
   try {
@@ -128,16 +195,20 @@ export async function save() {
     handleSyncError(err);
   } finally {
     saving = false;
+    writeCache();
   }
 }
 
 async function poll() {
-  if (saving || dirty || !drive.fileId || !G.hasToken()) return;
+  if (saving || !G.hasToken()) return;
   try {
+    if (!loaded) { await loadAll(); return; }
+    if (dirty || !drive.fileId) return;
     const v = await G.fileVersion(drive.fileId);
     if (v !== remoteVersion) {
       applyRemote(await G.readJson(drive.fileId));
       remoteVersion = v;
+      writeCache();
       emit(true);
     }
     if (sync.status !== 'on') setStatus('on');
@@ -146,7 +217,7 @@ async function poll() {
   }
 }
 
-function handleSyncError(err) {
+export function handleSyncError(err) {
   console.error(err);
   if (err?.code === 'auth') setStatus('auth', err.message);
   else {
@@ -174,7 +245,8 @@ export function stopSync() {
 
 // 다시 로그인한 뒤 밀린 저장과 확인을 이어서 한다
 export async function resume() {
-  if (dirty) await save();
+  if (!loaded) await loadAll();
+  else if (dirty) await save();
   else await poll();
 }
 
@@ -185,11 +257,13 @@ function resetTables() {
   tomb = Object.fromEntries(TABLES.map((t) => [t, {}]));
 }
 
-// 로그아웃할 때: 메모리와 드라이브 위치 정보를 모두 비운다
+// 로그아웃할 때: 메모리, 드라이브 위치 정보, 브라우저 사본을 모두 비운다
 export function clearData() {
   resetTables();
+  clearCache();
   remoteVersion = null;
   dirty = false;
+  loaded = false;
   Object.assign(drive, { rootId: null, materialsId: null, fileId: null });
 }
 
