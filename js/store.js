@@ -6,7 +6,8 @@ import * as G from './google.js';
 
 // curriculum_items · item_materials 는 예전 버전(차시 목록) 데이터를 보존하려고 남겨 둔다
 export const TABLES = ['classes', 'curriculum_items', 'timetable_slots', 'timetable_changes', 'lessons', 'materials', 'item_materials', 'lesson_materials', 'days_off', 'settings',
-  'units', 'class_notes', 'folders'];
+  'units', 'class_notes', 'folders',
+  'students', 'student_notes', 'assessments', 'scores', 'groupings', 'group_rules', 'stickers', 'events', 'gcal_map'];
 const DATA_FILE = '진도관리-데이터.json';
 const POLL_MS = 30_000;
 const TOMB_KEEP_MS = 90 * 24 * 3600 * 1000;
@@ -15,7 +16,7 @@ const CACHE_MAX_AGE = 60 * 24 * 3600 * 1000; // 지운 기록(90일)보다 짧�
 
 // 기본키가 id 가 아닌 테이블
 // folders: 드라이브 폴더 위치 (key 예: 'y:2026', 's:2026:2', 'j:2026:2:국어', 'u:<단원 id>', 'p:<단원 id>:lesson')
-const KEYS = { item_materials: ['item_id', 'material_id'], lesson_materials: ['lesson_id', 'material_id'], settings: ['user_id'], folders: ['key'] };
+const KEYS = { item_materials: ['item_id', 'material_id'], lesson_materials: ['lesson_id', 'material_id'], settings: ['user_id'], folders: ['key'], scores: ['assessment_id', 'student_id'], gcal_map: ['key'] };
 const DEFAULTS = {
   classes: { color: '#4f7cff', sort: 0 },
   curriculum_items: { unit: '', seq: 0 },
@@ -26,6 +27,10 @@ const DEFAULTS = {
   settings: { periods: 7, weekdays: 5, sem2_start: '08-01' },
   units: { sort: 0 },
   class_notes: { done: false },
+  students: { gender: '', level: '', sample: false },
+  assessments: { max_score: 100, dates: {} },
+  stickers: { n: 1, reason: '' },
+  events: { note: '', class_id: null },
 };
 
 export const data = Object.fromEntries(TABLES.map((t) => [t, []]));
@@ -35,6 +40,7 @@ export const drive = { rootId: null, materialsId: null, fileId: null };
 
 const listeners = new Set();
 export const onChange = (fn) => listeners.add(fn);
+export const offChange = (fn) => listeners.delete(fn);
 // remote: 다른 기기에서 온 변경이면 true (입력 중에는 화면 갱신을 미룬다)
 const emit = (remote = false) => listeners.forEach((fn) => fn({ remote }));
 
@@ -300,7 +306,17 @@ function cascadeDelete(table, row, stamp) {
     del('timetable_changes', (r) => r.class_id === row.id);
     del('lessons', (r) => r.class_id === row.id);
     del('class_notes', (r) => r.class_id === row.id);
+    del('stickers', (r) => r.class_id === row.id);
+    del('groupings', (r) => r.class_id === row.id);
+    del('events', (r) => r.class_id === row.id);
   }
+  if (table === 'students') {
+    del('student_notes', (r) => r.student_id === row.id);
+    del('scores', (r) => r.student_id === row.id);
+    del('stickers', (r) => r.student_id === row.id);
+    del('group_rules', (r) => r.a === row.id || r.b === row.id);
+  }
+  if (table === 'assessments') del('scores', (r) => r.assessment_id === row.id);
   if (table === 'units') {
     for (const t of ['lessons', 'materials']) for (const r of data[t]) if (r.unit_id === row.id) { r.unit_id = null; r._u = stamp; }
   }
@@ -549,3 +565,41 @@ export function materialsOfLesson(lessonId) {
     .map((lm) => materialById(lm.material_id))
     .filter(Boolean);
 }
+
+// ---- 학생 (학년도 + 학년 + 반 단위라서 같은 반의 국어 · 독서가 명단을 함께 쓴다) ----
+export const studentById = (id) => data.students.find((s) => s.id === id);
+export function studentsOf(cls) {
+  if (!cls?.grade) return [];
+  const year = classYear(cls);
+  return data.students.filter((s) => s.year === year && s.grade === cls.grade && s.room === cls.room)
+    .sort((a, b) => a.number - b.number || koSort(a.name, b.name));
+}
+export const studentLabel = (s) => (s ? `${s.number}. ${s.name}` : '(삭제된 학생)');
+export const notesOfStudent = (id) => data.student_notes.filter((n) => n.student_id === id).sort((a, b) => b.date.localeCompare(a.date) || b.created_at.localeCompare(a.created_at));
+
+// ---- 수행평가 ----
+export function assessmentsOf(cls, term) {
+  return data.assessments.filter((a) => a.year === term.year && a.semester === term.semester && a.subject === cls.subject && a.grade === cls.grade)
+    .sort((a, b) => a.created_at.localeCompare(b.created_at));
+}
+export const scoreOf = (assessmentId, studentId) => data.scores.find((s) => s.assessment_id === assessmentId && s.student_id === studentId);
+
+// ---- 칭찬 스티커 (반-과목마다, 학기별로 센다) ----
+export function stickerCount(classId, studentId, term) {
+  return data.stickers.filter((s) => s.class_id === classId && s.student_id === studentId && sameTerm(termOf(s.date), term))
+    .reduce((n, s) => n + (s.n || 1), 0);
+}
+
+// ---- 일정: 직접 넣은 일정 + 수행평가 날짜 ----
+// 반환: [{ date, title, class_id, kind: 'event' | 'assessment', ref }]
+export function agenda(from, to) {
+  const out = [];
+  for (const e of data.events) if (e.date >= from && e.date <= to) out.push({ date: e.date, title: e.title, class_id: e.class_id, kind: 'event', ref: e });
+  for (const a of data.assessments) {
+    for (const [classId, date] of Object.entries(a.dates || {})) {
+      if (date && date >= from && date <= to && classById(classId)) out.push({ date, title: `수행평가 · ${a.title}`, class_id: classId, kind: 'assessment', ref: a });
+    }
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date) || (classLabel(classById(a.class_id)) || '').localeCompare(classLabel(classById(b.class_id)) || '', 'ko'));
+}
+

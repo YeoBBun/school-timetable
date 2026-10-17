@@ -4,6 +4,8 @@ import * as S from '../store.js';
 import { go } from '../app.js';
 import { attachDialog, matLink, unitSelect } from './materials.js';
 import { addRecord, recordDialog, copyDialog, noteDialog, noteItem } from './records.js';
+import { openStickerBoard } from './stickers.js';
+import { eventDialog } from './schedule.js';
 
 const RECENT = 6; // 반마다 보여 줄 최근 기록 수
 let date = todayStr();
@@ -31,6 +33,7 @@ export default function render(root) {
       h('button', { class: 'btn', title: '다음 날', onClick: () => showDate(addDays(date, 1)) }, '▶'),
       h('input', { type: 'date', value: date, onChange: (e) => e.target.value && showDate(e.target.value) })),
     timetableBar(slots, off, isToday, classes),
+    agendaBar(),
     classes.length
       ? h('div', { class: 'class-cols' }, classes.map((c) => classColumn(c, term, slots)))
       : h('div', { class: 'empty' }, `${term.year}학년도에 담당하는 반이 없습니다. '시간표 · 반' 화면에서 반을 추가하세요.`));
@@ -67,6 +70,26 @@ function timetableBar(slots, off, isToday, classes) {
     items.length ? h('div', { class: 'slots' }, items) : h('span', { class: 'muted' }, '수업 없음'),
     h('span', { class: 'grow' }),
     classes.length ? h('button', { class: 'btn btn-sm', onClick: () => changeDialog(date) }, '이날 시간표 바꾸기') : null);
+}
+
+// ---- 다가오는 일정 (오늘부터 7일) ----
+function agendaBar() {
+  const items = S.agenda(date, addDays(date, 7));
+  return h('div', { class: 'agenda-bar' },
+    h('strong', {}, '다가오는 일정'),
+    items.length
+      ? items.map((it) => h('a', { class: `agenda-chip ${it.kind}`, href: it.kind === 'assessment' ? '#/assess' : '#/schedule' },
+        h('span', { class: 'muted' }, it.date === date ? '오늘' : fmtMD(it.date)), ' ',
+        it.class_id ? `${S.classLabel(S.classById(it.class_id))} ` : '', it.kind === 'assessment' ? `📝 ${it.ref.title}` : it.title))
+      : h('span', { class: 'muted small' }, '일주일 안에 일정이 없습니다.'),
+    h('span', { class: 'grow' }),
+    h('button', { class: 'btn btn-sm', onClick: () => eventDialog(null, { date }) }, '+ 일정'));
+}
+
+// 반 칸 위쪽: 이 반의 2주 안 수행평가
+function upcomingOf(cls) {
+  const items = S.agenda(date, addDays(date, 14)).filter((it) => it.class_id === cls.id);
+  return items.length ? h('div', { class: 'col-agenda' }, items.map((it) => h('div', {}, `${it.date === date ? '오늘' : fmtMD(it.date)} · ${it.kind === 'assessment' ? `수행평가 ${it.ref.title}` : it.title}`))) : null;
 }
 
 // ---- 반 칸 ----
@@ -126,7 +149,10 @@ function classColumn(cls, term, slots) {
       h('a', { href: `#/class/${cls.id}`, class: 'col-name', title: '이 반 전체 기록 보기' }, classChip(cls, S.classLabel(cls))),
       periods.length ? h('span', { class: 'badge badge-info' }, `${periods.join('·')}교시`) : null,
       h('span', { class: 'grow' }),
+      h('a', { class: 'icon-btn', title: '조 편성', href: `#/class/${cls.id}/groups` }, '👥'),
+      h('button', { class: 'icon-btn', title: '칭찬 스티커 띄우기', onClick: () => openStickerBoard(cls) }, '⭐'),
       h('button', { class: 'icon-btn', title: '반 메모 추가', onClick: () => noteDialog(cls) }, '📝')),
+    upcomingOf(cls),
     h('div', { class: 'col-unit' }, unitSelect(term, cls.subject, unitId, (v) => { unitPick.set(key, v); go('today'); }, { emptyLabel: '— 단원 고르기 —' })),
     input,
     notes.length ? h('div', { class: 'notes' }, notes.map((n) => noteItem(n, cls))) : null,

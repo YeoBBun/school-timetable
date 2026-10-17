@@ -4,6 +4,9 @@ import { h, toast, showError } from './ui.js';
 import home from './views/home.js';
 import classpage from './views/classpage.js';
 import search from './views/search.js';
+import assess from './views/assess.js';
+import schedule from './views/schedule.js';
+import './calendar.js';
 import timetable from './views/timetable.js';
 import materials from './views/materials.js';
 import settings from './views/settings.js';
@@ -13,6 +16,8 @@ const ROUTES = [
   { path: 'today', label: '오늘', view: home },
   { path: 'search', label: '찾기', view: search },
   { path: 'materials', label: '수업 자료', view: materials },
+  { path: 'assess', label: '수행평가', view: assess },
+  { path: 'schedule', label: '일정', view: schedule },
   { path: 'timetable', label: '시간표 · 반', view: timetable },
   { path: 'settings', label: '설정', view: settings },
   { path: 'class', view: classpage, nav: false, parent: 'today' },
@@ -27,11 +32,12 @@ export function go(path) {
   else location.hash = `#/${path}`;
 }
 
-// '#/class/abc' → class 화면 + arg 'abc'
+// '#/class/abc/students' → class 화면 + arg 'abc' + sub 'students'
 function currentRoute() {
-  const [path, arg] = location.hash.replace(/^#\/?/, '').split('/');
+  const [path, arg, sub] = location.hash.replace(/^#\/?/, '').split('/');
   const route = ROUTES.find((r) => r.path === path) || ROUTES[0];
-  return { ...route, arg: arg ? decodeURIComponent(arg) : undefined };
+  const dec = (v) => (v ? decodeURIComponent(v) : undefined);
+  return { ...route, arg: dec(arg), sub: dec(sub) };
 }
 
 const SYNC_LABEL = { on: '드라이브에 저장됨', saving: '저장 중…', error: '저장 실패 · 다시 시도 중', auth: '구글 다시 연결 필요', off: '연결 중…' };
@@ -48,7 +54,7 @@ function syncBadge() {
 // 로그인이 만료되면(약 1시간) 버튼을 눌러 다시 연결하고 밀린 저장을 이어서 한다
 async function reconnect() {
   try {
-    await G.signIn();
+    await G.signIn(!!S.settings().gcal_id);
     await S.resume();
     toast('다시 연결했습니다.', 'ok');
   } catch (err) { showError(err); }
@@ -82,17 +88,23 @@ export function render({ remote = false } = {}) {
   const route = currentRoute();
   document.querySelectorAll('.nav a').forEach((a) => a.classList.toggle('active', a.getAttribute('href') === `#/${route.parent || route.path}`));
   const scroll = viewEl.scrollTop;
-  const key = `${route.path}/${route.arg ?? ''}`;
+  const key = `${route.path}/${route.arg ?? ''}/${route.sub ?? ''}`;
   const sameView = viewEl.dataset.route === key;
   viewEl.dataset.route = key;
+  // data-fk 가 붙은 입력칸에 커서가 있으면 다시 그린 뒤에도 그 칸에 커서를 둔다 (표에서 Tab · Enter 로 이어 입력)
+  const fk = sameView ? document.activeElement?.dataset?.fk : null;
   viewEl.replaceChildren();
   try {
-    route.view(viewEl, route.arg);
+    route.view(viewEl, route.arg, route.sub);
   } catch (err) {
     showError(err);
   }
   if (sameView) viewEl.scrollTop = scroll;
   else viewEl.scrollTop = 0;
+  if (fk) {
+    const el = viewEl.querySelector(`[data-fk="${CSS.escape(fk)}"]`);
+    if (el) { el.focus(); el.select?.(); }
+  }
 }
 
 // 포커스가 빠지거나 모달이 닫히면 미뤄둔 렌더링 실행
@@ -111,7 +123,19 @@ window.addEventListener('hashchange', () => {
   render();
 });
 
-S.onChange(render);
+// 바뀐 내용은 한 번에 모아 다음 순간에 그린다 (Tab 으로 옮겨 간 칸을 알고 나서 그리도록)
+let renderTimer = null;
+let renderRemote = true;
+S.onChange(({ remote }) => {
+  renderRemote &&= remote;
+  if (renderTimer) return;
+  renderTimer = setTimeout(() => {
+    renderTimer = null;
+    const r = renderRemote;
+    renderRemote = true;
+    render({ remote: r });
+  }, 0);
+});
 
 // ---- 로그인 ----
 function loginView(message) {
@@ -121,7 +145,7 @@ function loginView(message) {
       btn.disabled = true;
       btn.textContent = '구글 로그인 창을 확인하세요…';
       try {
-        await G.signIn();
+        await G.signIn(!!S.settings().gcal_id);
         await onSignedIn();
       } catch (err) {
         showError(err);
