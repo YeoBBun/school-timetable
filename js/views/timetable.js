@@ -1,4 +1,4 @@
-// 시간표 · 반 관리
+// 시간표 · 반 관리 (설정 화면의 탭)
 import { h, append, toast, showError, confirmDialog, WEEKDAYS, PALETTE, todayStr, fmtDateLong } from '../ui.js';
 import { showDate } from './home.js';
 import * as S from '../store.js';
@@ -21,13 +21,12 @@ export default function render(root) {
   if (brush !== 'erase' && !classes.some((c) => c.id === brush)) brush = classes[0]?.id || null;
 
   append(root,
-    h('div', { class: 'page-head' }, h('h2', {}, '시간표 · 반')),
     h('div', { class: 'cols' },
       h('div', {},
         classes.length
           ? [brushBar(classes), grid(st)]
           : h('div', { class: 'empty' }, '오른쪽에서 먼저 수업하는 반을 추가하세요.'),
-        h('p', { class: 'muted small' }, '위에서 반을 고르고 수업 있는 칸을 클릭하세요. 여러 칸을 드래그해서 한 번에 칠할 수도 있습니다. 같은 반이 칠해진 칸을 다시 클릭하면 지워집니다. 하루 교시 수와 토요일 수업은 설정에서 바꿀 수 있습니다.')),
+        h('p', { class: 'muted small' }, "위에서 반을 고르고 수업 있는 칸을 클릭하세요. 여러 칸을 드래그해서 한 번에 칠할 수도 있습니다. 같은 반이 칠해진 칸을 다시 클릭하면 지워집니다. 하루 교시 수와 토요일 수업은 '기본 설정' 탭에서 바꿀 수 있습니다.")),
       h('div', {}, classPanel(classes), changesPanel(), pastClassesPanel())));
 }
 
@@ -43,7 +42,7 @@ function changesPanel() {
   }
   return h('div', { class: 'card' },
     h('h3', {}, '날짜별 시간표 변경'),
-    h('p', { class: 'muted small', style: { marginTop: 0 } }, "교체 · 보강 · 결강은 '오늘' 화면에서 날짜를 고른 뒤 '이날 시간표 바꾸기'로 입력합니다."),
+    h('p', { class: 'muted small', style: { marginTop: 0 } }, "교체 · 보강 · 결강은 '홈' 화면에서 날짜를 고른 뒤 '이날 시간표 바꾸기'로 입력합니다."),
     byDate.size
       ? [...byDate].map(([d, list]) => h('div', { style: { padding: '6px 0', borderTop: '1px solid var(--border)' } },
         h('a', { href: '#/today', onClick: (e) => { e.preventDefault(); showDate(d); } }, fmtDateLong(d)),
@@ -59,7 +58,7 @@ function changesPanel() {
 
 function brushBar(classes) {
   const hours = (id) => S.data.timetable_slots.filter((s) => s.class_id === id).length;
-  const pick = (id) => { brush = id; go('timetable'); };
+  const pick = (id) => { brush = id; go('settings/timetable'); };
   const clearAll = async () => {
     if (!S.data.timetable_slots.length) return;
     if (!await confirmDialog('시간표의 모든 칸을 비울까요? (수업 기록은 그대로 남습니다)', { okLabel: '모두 비우기' })) return;

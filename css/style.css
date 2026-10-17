@@ -421,3 +421,14 @@ a.tab.active { color: #fff; }
 .unit-summary { padding: 6px 0; border-bottom: 1px solid var(--border); }
 .unit-summary:last-child { border-bottom: none; }
 @media (max-width: 1100px) { .seteuk-grid, .seteuk-cols { grid-template-columns: 1fr; } .seteuk-list { position: static; max-height: 240px; } }
+
+/* 홈 화면 반 이름 (반 관리로 들어가는 큰 버튼) */
+.col-title {
+  display: flex; flex-direction: column; align-items: stretch; gap: 4px; width: 100%; padding: 10px 12px; border-radius: 10px; text-decoration: none;
+  background: color-mix(in srgb, var(--c) 12%, white); border: 1px solid color-mix(in srgb, var(--c) 35%, white); color: var(--text);
+}
+.col-title:hover { border-color: var(--c); background: color-mix(in srgb, var(--c) 20%, white); }
+.col-title-name { font-size: 19px; font-weight: 800; color: var(--c); line-height: 1.25; word-break: keep-all; }
+.col-title-sub { display: flex; align-items: center; gap: 6px; }
+.col-title-go { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.col-title .badge { flex-shrink: 0; }

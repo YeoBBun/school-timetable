@@ -7,19 +7,19 @@ import search from './views/search.js';
 import assess from './views/assess.js';
 import schedule from './views/schedule.js';
 import './calendar.js';
-import timetable from './views/timetable.js';
 import materials from './views/materials.js';
 import settings from './views/settings.js';
 
 // nav: false 인 화면은 메뉴에 없고 링크로만 들어간다 (#/class/반id)
 const ROUTES = [
-  { path: 'today', label: '오늘', view: home },
-  { path: 'search', label: '찾기', view: search },
+  { path: 'today', label: '홈', view: home },
   { path: 'materials', label: '수업 자료', view: materials },
   { path: 'assess', label: '수행평가', view: assess },
   { path: 'schedule', label: '일정', view: schedule },
-  { path: 'timetable', label: '시간표 · 반', view: timetable },
+  { path: 'search', label: '찾기', view: search },
   { path: 'settings', label: '설정', view: settings },
+  // 시간표 · 반은 설정 안의 탭 (예전 주소 #/timetable 도 그대로 열린다)
+  { path: 'timetable', view: (root) => settings(root, 'timetable'), nav: false, parent: 'settings' },
   { path: 'class', view: classpage, nav: false, parent: 'today' },
 ];
 
