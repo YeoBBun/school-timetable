@@ -1,6 +1,6 @@
 // 시간표 · 반 관리
 import { h, append, toast, showError, confirmDialog, WEEKDAYS, PALETTE, todayStr, fmtDateLong } from '../ui.js';
-import { showDate } from './today.js';
+import { showDate } from './home.js';
 import * as S from '../store.js';
 import { go } from '../app.js';
 
@@ -12,9 +12,12 @@ document.addEventListener('pointerup', () => activeCommit?.());
 document.addEventListener('pointercancel', () => activeCommit?.());
 document.addEventListener('pointermove', (e) => activeMove?.(e));
 
+// 올해 학년도 반만 다룬다 (지난 학년도 반은 기록 보존용으로 아래에 따로 보여 준다)
+const thisYear = () => S.termOf(todayStr()).year;
+
 export default function render(root) {
   const st = S.settings();
-  const classes = S.sortedClasses();
+  const classes = S.classesOfYear(thisYear());
   if (brush !== 'erase' && !classes.some((c) => c.id === brush)) brush = classes[0]?.id || null;
 
   append(root,
@@ -25,7 +28,7 @@ export default function render(root) {
           ? [brushBar(classes), grid(st)]
           : h('div', { class: 'empty' }, '오른쪽에서 먼저 수업하는 반을 추가하세요.'),
         h('p', { class: 'muted small' }, '위에서 반을 고르고 수업 있는 칸을 클릭하세요. 여러 칸을 드래그해서 한 번에 칠할 수도 있습니다. 같은 반이 칠해진 칸을 다시 클릭하면 지워집니다. 하루 교시 수와 토요일 수업은 설정에서 바꿀 수 있습니다.')),
-      h('div', {}, classPanel(classes), changesPanel())));
+      h('div', {}, classPanel(classes), changesPanel(), pastClassesPanel())));
 }
 
 // 날짜별 시간표 변경 내역 (오늘 이후)
@@ -40,12 +43,12 @@ function changesPanel() {
   }
   return h('div', { class: 'card' },
     h('h3', {}, '날짜별 시간표 변경'),
-    h('p', { class: 'muted small', style: { marginTop: 0 } }, "교체 · 보강 · 결강은 '오늘 수업' 화면에서 날짜를 고른 뒤 '이날 시간표 바꾸기'로 입력합니다."),
+    h('p', { class: 'muted small', style: { marginTop: 0 } }, "교체 · 보강 · 결강은 '오늘' 화면에서 날짜를 고른 뒤 '이날 시간표 바꾸기'로 입력합니다."),
     byDate.size
       ? [...byDate].map(([d, list]) => h('div', { style: { padding: '6px 0', borderTop: '1px solid var(--border)' } },
         h('a', { href: '#/today', onClick: (e) => { e.preventDefault(); showDate(d); } }, fmtDateLong(d)),
         list.map((c) => h('div', { class: 'small', style: { display: 'flex', gap: '6px', alignItems: 'center' } },
-          h('span', {}, `${c.period}교시 → ${c.class_id ? (S.classById(c.class_id)?.name || '') + ' ' + (S.classById(c.class_id)?.subject || '') : '수업 없음'}${c.note ? ` (${c.note})` : ''}`),
+          h('span', {}, `${c.period}교시 → ${c.class_id ? S.classById(c.class_id)?.name || '' : '수업 없음'}${c.note ? ` (${c.note})` : ''}`),
           h('span', { class: 'grow' }),
           h('button', {
             class: 'icon-btn danger', title: '변경 취소 (주간 시간표대로)',
@@ -175,7 +178,7 @@ function classPanel(classes) {
         class: 'icon-btn danger', title: '삭제',
         onClick: async () => {
           const n = S.data.lessons.filter((l) => l.class_id === c.id).length;
-          const ok = await confirmDialog(`'${c.name} ${c.subject}' 반을 삭제할까요?${n ? `\n이 반의 수업 기록 ${n}건도 함께 삭제됩니다.` : ''}`);
+          const ok = await confirmDialog(`'${c.name} ${c.subject}' 반을 삭제할까요?${n ? `\n⚠️ 이 반의 수업 기록 ${n}건과 반 메모도 함께 삭제됩니다.\n새 학년도가 되어도 지난 반은 지우지 않아도 됩니다. (자동으로 '지난 학년도 반'으로 넘어갑니다)` : ''}`);
           if (!ok) return;
           try { await S.remove('classes', { id: c.id }, ['timetable_slots', 'lessons', 'lesson_materials']); toast('삭제했습니다.'); } catch (err) { showError(err); }
         },
@@ -190,16 +193,27 @@ function classPanel(classes) {
     const s = subject.value.trim();
     if (!n || !s) return toast('반 이름과 과목을 입력하세요.', 'error');
     try {
-      await S.insert('classes', { name: n, subject: s, color: PALETTE[S.data.classes.length % PALETTE.length], sort: S.data.classes.length });
+      await S.insert('classes', { name: n, subject: s, year: thisYear(), color: PALETTE[classes.length % PALETTE.length], sort: classes.length });
       toast(`${n} ${s} 반을 추가했습니다.`, 'ok');
     } catch (err) { showError(err); }
   };
 
   return h('div', { class: 'card' },
-    h('h3', {}, '수업하는 반'),
+    h('h3', {}, `${thisYear()}학년도 담당 반`),
     h('datalist', { id: 'subject-list' }, subjects.map((s) => h('option', { value: s }))),
     classes.length ? classes.map(row) : h('p', { class: 'muted' }, '아직 반이 없습니다.'),
     h('form', { class: 'row', style: { marginTop: '12px' }, onSubmit: add },
       name, subject, h('button', { class: 'btn btn-primary', type: 'submit' }, '추가')),
-    h('p', { class: 'muted small', style: { marginBottom: 0 } }, '같은 반이라도 과목이 다르면 따로 추가하세요. 진도는 과목별 단원·차시 목록을 기준으로 기록됩니다.'));
+    h('p', { class: 'muted small', style: { marginBottom: 0 } }, '같은 반이라도 과목이 다르면 따로 추가하세요. 반은 학년도마다 따로 만들고, 지난 학년도 반의 기록은 그대로 남습니다.'));
+}
+
+// 지난 학년도 반: 기록을 볼 수 있게 링크만 둔다
+function pastClassesPanel() {
+  const years = [...new Set(S.data.classes.map(S.classYear))].filter((y) => y < thisYear()).sort((a, b) => b - a);
+  if (!years.length) return null;
+  return h('div', { class: 'card' },
+    h('h3', {}, '지난 학년도 반'),
+    years.map((y) => h('div', { class: 'row', style: { marginBottom: '6px' } },
+      h('strong', { class: 'small' }, `${y}학년도`),
+      S.classesOfYear(y).map((c) => h('a', { href: `#/class/${c.id}` }, c.name)))));
 }
