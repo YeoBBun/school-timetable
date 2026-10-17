@@ -53,7 +53,7 @@ export default function render(root) {
       h('h2', {}, '수행평가'), termSel, subjectTabs,
       view.subject ? h('button', { class: 'btn btn-primary', onClick: () => assessmentDialog(null, { term, subject: view.subject }) }, '+ 새 수행평가') : null),
     !view.subject
-      ? h('div', { class: 'empty' }, `${term.year}학년도 담당 반이 없습니다. '시간표 · 반' 화면에서 먼저 반을 추가하세요.`)
+      ? h('div', { class: 'empty' }, `${term.year}학년도 담당 반이 없습니다. '설정 → 시간표 · 반'에서 먼저 반을 추가하세요.`)
       : list.length
         ? list.map((a) => assessmentCard(a, () => { view.openId = a.id; view.classId = ''; rerender(); }))
         : h('div', { class: 'empty' }, '아직 수행평가가 없습니다. 오른쪽 위 \'+ 새 수행평가\'로 만드세요.'),

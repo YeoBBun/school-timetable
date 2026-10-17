@@ -21,7 +21,7 @@ const TABS = [
 export default function render(root, id, sub) {
   const cls = S.classById(id);
   if (!cls) {
-    append(root, h('div', { class: 'empty' }, '반을 찾을 수 없습니다. ', h('a', { href: '#/today' }, '첫 화면으로')));
+    append(root, h('div', { class: 'empty' }, '반을 찾을 수 없습니다. ', h('a', { href: '#/today' }, '홈으로')));
     return;
   }
   const tab = TABS.find((t) => t.key === sub) || TABS[0];
@@ -29,7 +29,7 @@ export default function render(root, id, sub) {
   append(root,
     h('div', { class: 'page-head' },
       h('h2', { class: 'row' }, classChip(cls, S.classLabel(cls)), h('span', { class: 'muted small' }, [`${S.classYear(cls)}학년도`, cls.subject].filter(Boolean).join(' · '))),
-      h('a', { class: 'btn', href: '#/today' }, '← 첫 화면')),
+      h('a', { class: 'btn', href: '#/today' }, '← 홈')),
     h('div', { class: 'tabs' }, TABS.map((t) => h('a', { class: `tab ${t === tab ? 'active' : ''}`, href: `#/class/${cls.id}/${t.key}` }, t.label))),
     body);
   tab.view(body, cls);
@@ -64,7 +64,7 @@ function renderRecords(root, cls) {
                 h('td', { class: 'small muted' }, S.unitById(l.unit_id)?.name || ''),
                 h('td', {}, S.lessonText(l)),
                 h('td', {}, h('div', { class: 'mat-list' }, S.materialsOfLesson(l.id).map(matLink)))))))))
-          : h('div', { class: 'empty' }, '아직 기록이 없습니다. 첫 화면의 이 반 칸에 한 줄씩 적어 보세요.')),
+          : h('div', { class: 'empty' }, '아직 기록이 없습니다. 홈 화면의 이 반 칸에 한 줄씩 적어 보세요.')),
       h('div', {},
         h('div', { class: 'card' },
           h('div', { class: 'row' }, h('h3', { style: { margin: 0 } }, '반 메모'), h('span', { class: 'grow' }),

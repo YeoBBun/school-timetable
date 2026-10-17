@@ -1,11 +1,24 @@
-// 설정: 교시 수, 수업 요일, 2학기 시작일, 휴업일, 백업, 로그아웃
+// 설정: 탭 두 개 — 기본 설정(교시 수, 수업 요일, 2학기 시작일, 휴업일, 백업, 로그아웃) · 시간표 · 반
 import { h, append, toast, showError, confirmDialog, fmtDateLong, todayStr, downloadText } from '../ui.js';
 import * as S from '../store.js';
 import { signOut } from '../app.js';
 import * as G from '../google.js';
 import { addSamples, clearAllSamples } from './students.js';
+import timetable from './timetable.js';
 
-export default function render(root) {
+export default function render(root, sub) {
+  const tabs = [{ key: '', label: '기본 설정' }, { key: 'timetable', label: '시간표 · 반' }];
+  const cur = sub === 'timetable' ? 'timetable' : '';
+  const body = h('div', {});
+  append(root,
+    h('div', { class: 'page-head' }, h('h2', {}, '설정')),
+    h('div', { class: 'tabs' }, tabs.map((t) => h('a', { class: `tab ${t.key === cur ? 'active' : ''}`, href: t.key ? `#/settings/${t.key}` : '#/settings' }, t.label))),
+    body);
+  if (cur === 'timetable') timetable(body);
+  else general(body);
+}
+
+function general(root) {
   const st = S.settings();
 
   const saveSettings = async (patch) => {
@@ -61,13 +74,12 @@ export default function render(root) {
     input.click();
   };
 
-  append(root, 
-    h('div', { class: 'page-head' }, h('h2', {}, '설정')),
+  append(root,
     h('div', { class: 'cols' },
       h('div', {},
         h('div', { class: 'card' },
           h('h3', {}, '휴업일 · 수업 없는 날'),
-          h('p', { class: 'muted small', style: { marginTop: 0 } }, "여기 등록한 날은 '오늘' 화면에 시간표가 나타나지 않습니다."),
+          h('p', { class: 'muted small', style: { marginTop: 0 } }, "여기 등록한 날은 '홈' 화면에 시간표가 나타나지 않습니다."),
           h('form', { class: 'row', onSubmit: addOff }, offDate, offNote, h('button', { class: 'btn btn-primary', type: 'submit' }, '추가')),
           offs.length
             ? h('table', { class: 'table', style: { marginTop: '12px' } }, h('tbody', {}, offs.map((o) => h('tr', {},

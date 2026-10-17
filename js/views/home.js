@@ -36,7 +36,7 @@ export default function render(root) {
     agendaBar(),
     classes.length
       ? h('div', { class: 'class-cols' }, classes.map((c) => classColumn(c, term, slots)))
-      : h('div', { class: 'empty' }, `${term.year}학년도에 담당하는 반이 없습니다. '시간표 · 반' 화면에서 반을 추가하세요.`));
+      : h('div', { class: 'empty' }, `${term.year}학년도에 담당하는 반이 없습니다. '설정 → 시간표 · 반'에서 반을 추가하세요.`));
 
   if (focusClass) {
     root.querySelector(`[data-input="${focusClass}"]`)?.focus();
@@ -146,10 +146,11 @@ function classColumn(cls, term, slots) {
 
   return h('div', { class: 'card class-col', style: { '--c': cls.color } },
     h('div', { class: 'col-head' },
-      h('a', { href: `#/class/${cls.id}`, class: 'col-name', title: '이 반 전체 기록 보기' }, classChip(cls, S.classLabel(cls))),
-      periods.length ? h('span', { class: 'badge badge-info' }, `${periods.join('·')}교시`) : null,
-      h('span', { class: 'grow' }),
-),
+      h('a', { href: `#/class/${cls.id}`, class: 'col-title', title: '학생 · 수행평가 · 조 편성 · 칭찬 스티커 · 과세특' },
+        h('span', { class: 'col-title-name' }, S.classLabel(cls)),
+        h('span', { class: 'col-title-sub' },
+          periods.length ? h('span', { class: 'badge badge-info' }, `${periods.join('·')}교시`) : null,
+          h('span', { class: 'col-title-go' }, '반 관리 ›')))),
     upcomingOf(cls),
     h('div', { class: 'col-unit' }, unitSelect(term, cls.subject, unitId, (v) => { unitPick.set(key, v); go('today'); }, { emptyLabel: '— 단원 고르기 —' })),
     input,

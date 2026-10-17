@@ -62,6 +62,7 @@ serve.py            캐시 끈 로컬 서버 → http://localhost:5500
 - 로그인 토큰은 약 1시간 동안 localStorage 에 둡니다. 만료되면 AuthError → 배지에 **다시 연결** 버튼이 뜨고, 누르면 `S.resume()` 으로 밀린 저장을 이어서 합니다.
 
 ### 주요 기능 규칙
+- **메뉴**(2026-10-17 사용자 요청): 홈(#/today) · 수업 자료 · 수행평가 · 일정 · 찾기 · 설정. 시간표 · 반은 설정 안의 탭(#/settings/timetable, 예전 #/timetable 도 열림). 홈의 반 칸 맨 위 큰 '반 이름 + 반 관리 ›' 이 반 화면으로 가는 입구.
 - **첫 화면**(#/today): 위에 그날 시간표(`S.effectiveSlots` = 주간 시간표 + timetable_changes, class_id null 이면 결강), 아래에 담당 반 칸. 칸마다 단원 선택(기본: 그 반이 이번 학기 마지막으로 쓴 단원), 한 줄 입력(Enter, 한글 조합 중 Enter 는 무시), 반 메모, 최근 기록 6개. 기록에 파일을 끌어다 놓으면 `attachDialog(lesson, files)`.
 - **자료는 기록에 붙입니다**(lesson_materials). 같은 자료를 여러 반에 쓰면 연결만 여러 개.
 - **시간표**: 위에서 반(붓)을 고르고 칸을 클릭하거나 드래그해서 칠합니다(pointer 이벤트).

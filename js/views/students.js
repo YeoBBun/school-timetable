@@ -10,7 +10,7 @@ const roomOf = (cls) => ({ year: S.classYear(cls), grade: cls.grade, room: cls.r
 
 export function renderStudentsTab(root, cls) {
   if (!cls.grade) {
-    append(root, h('div', { class: 'empty' }, "이 반은 학년 · 반이 정해지지 않았습니다. '시간표 · 반' 화면에서 학년과 반을 고르세요."));
+    append(root, h('div', { class: 'empty' }, "이 반은 학년 · 반이 정해지지 않았습니다. '설정 → 시간표 · 반'에서 학년과 반을 고르세요."));
     return;
   }
   const list = S.studentsOf(cls);
