@@ -124,10 +124,11 @@ export function fmtSize(bytes) {
 
 export const PALETTE = ['#4f7cff', '#f2994a', '#27ae60', '#eb5757', '#9b51e0', '#2d9cdb', '#d4a72c', '#16a085', '#e84393', '#636e72'];
 
-export function classChip(cls) {
+// label: 화면에 보일 반 이름 (S.classLabel)
+export function classChip(cls, label = cls?.name) {
   if (!cls) return h('span', { class: 'chip' }, '(삭제된 반)');
   return h('span', { class: 'chip', style: { background: cls.color + '22', color: cls.color, borderColor: cls.color + '55' } },
-    h('span', { class: 'dot', style: { background: cls.color } }), cls.name);
+    h('span', { class: 'dot', style: { background: cls.color } }), label);
 }
 
 export function downloadText(filename, text, mime = 'text/plain') {

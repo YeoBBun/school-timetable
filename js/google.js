@@ -117,7 +117,8 @@ async function createFolder(name, parentId) {
   return (await res.json()).id;
 }
 
-async function ensureFolder(name, parentId) {
+// 이름이 같은 폴더가 있으면 그것을, 없으면 새로 만든다
+export async function ensureFolder(name, parentId) {
   const parent = parentId ? ` and '${q(parentId)}' in parents` : '';
   const found = await findOne(`name='${q(name)}' and mimeType='${FOLDER_MIME}' and trashed=false${parent}`);
   return found ? found.id : createFolder(name, parentId);
@@ -189,6 +190,18 @@ export async function uploadFile(file, parentId, onProgress) {
     xhr.onerror = () => reject(new Error('업로드 중 네트워크 오류가 났습니다.'));
     xhr.send(file);
   });
+}
+
+// 이름 바꾸기 (폴더 · 파일 모두)
+export async function renameFile(fileId, name) {
+  await api(`${API}/files/${fileId}?fields=id`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+}
+
+// 다른 폴더로 옮기기
+export async function moveFile(fileId, toParentId, fromParentId) {
+  const params = new URLSearchParams({ addParents: toParentId, fields: 'id' });
+  if (fromParentId && fromParentId !== toParentId) params.set('removeParents', fromParentId);
+  await api(`${API}/files/${fileId}?${params}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{}' });
 }
 
 // 삭제 대신 휴지통으로 (드라이브 휴지통에서 30일 동안 되살릴 수 있다)

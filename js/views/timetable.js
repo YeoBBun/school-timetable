@@ -1,6 +1,6 @@
 // 시간표 · 반 관리
 import { h, append, toast, showError, confirmDialog, WEEKDAYS, PALETTE, todayStr, fmtDateLong } from '../ui.js';
-import { showDate } from './today.js';
+import { showDate } from './home.js';
 import * as S from '../store.js';
 import { go } from '../app.js';
 
@@ -12,9 +12,12 @@ document.addEventListener('pointerup', () => activeCommit?.());
 document.addEventListener('pointercancel', () => activeCommit?.());
 document.addEventListener('pointermove', (e) => activeMove?.(e));
 
+// 올해 학년도 반만 다룬다 (지난 학년도 반은 기록 보존용으로 아래에 따로 보여 준다)
+const thisYear = () => S.termOf(todayStr()).year;
+
 export default function render(root) {
   const st = S.settings();
-  const classes = S.sortedClasses();
+  const classes = S.classesOfYear(thisYear());
   if (brush !== 'erase' && !classes.some((c) => c.id === brush)) brush = classes[0]?.id || null;
 
   append(root,
@@ -25,7 +28,7 @@ export default function render(root) {
           ? [brushBar(classes), grid(st)]
           : h('div', { class: 'empty' }, '오른쪽에서 먼저 수업하는 반을 추가하세요.'),
         h('p', { class: 'muted small' }, '위에서 반을 고르고 수업 있는 칸을 클릭하세요. 여러 칸을 드래그해서 한 번에 칠할 수도 있습니다. 같은 반이 칠해진 칸을 다시 클릭하면 지워집니다. 하루 교시 수와 토요일 수업은 설정에서 바꿀 수 있습니다.')),
-      h('div', {}, classPanel(classes), changesPanel())));
+      h('div', {}, classPanel(classes), changesPanel(), pastClassesPanel())));
 }
 
 // 날짜별 시간표 변경 내역 (오늘 이후)
@@ -40,12 +43,12 @@ function changesPanel() {
   }
   return h('div', { class: 'card' },
     h('h3', {}, '날짜별 시간표 변경'),
-    h('p', { class: 'muted small', style: { marginTop: 0 } }, "교체 · 보강 · 결강은 '오늘 수업' 화면에서 날짜를 고른 뒤 '이날 시간표 바꾸기'로 입력합니다."),
+    h('p', { class: 'muted small', style: { marginTop: 0 } }, "교체 · 보강 · 결강은 '오늘' 화면에서 날짜를 고른 뒤 '이날 시간표 바꾸기'로 입력합니다."),
     byDate.size
       ? [...byDate].map(([d, list]) => h('div', { style: { padding: '6px 0', borderTop: '1px solid var(--border)' } },
         h('a', { href: '#/today', onClick: (e) => { e.preventDefault(); showDate(d); } }, fmtDateLong(d)),
         list.map((c) => h('div', { class: 'small', style: { display: 'flex', gap: '6px', alignItems: 'center' } },
-          h('span', {}, `${c.period}교시 → ${c.class_id ? (S.classById(c.class_id)?.name || '') + ' ' + (S.classById(c.class_id)?.subject || '') : '수업 없음'}${c.note ? ` (${c.note})` : ''}`),
+          h('span', {}, `${c.period}교시 → ${c.class_id ? S.classLabel(S.classById(c.class_id)) : '수업 없음'}${c.note ? ` (${c.note})` : ''}`),
           h('span', { class: 'grow' }),
           h('button', {
             class: 'icon-btn danger', title: '변경 취소 (주간 시간표대로)',
@@ -71,7 +74,7 @@ function brushBar(classes) {
       class: `brush ${brush === c.id ? 'active' : ''}`,
       style: { '--c': c.color },
       onClick: () => pick(c.id),
-    }, h('span', { class: 'dot', style: { background: c.color } }), h('strong', {}, c.name), ` ${c.subject}`, h('span', { class: 'muted small' }, ` · 주 ${hours(c.id)}`))),
+    }, h('span', { class: 'dot', style: { background: c.color } }), h('strong', {}, S.classLabel(c)), h('span', { class: 'muted small' }, ` · 주 ${hours(c.id)}`))),
     h('button', { class: `brush erase ${brush === 'erase' ? 'active' : ''}`, onClick: () => pick('erase') }, '지우개'),
     h('span', { class: 'grow' }),
     h('button', { class: 'btn btn-sm btn-danger', onClick: clearAll }, '모두 비우기'));
@@ -92,7 +95,7 @@ function grid(st) {
     cell.style.background = cls ? cls.color + '26' : '';
     cell.style.borderColor = cls ? cls.color + '66' : '';
     cell.replaceChildren(...(cls
-      ? [h('div', { class: 'tt-name', style: { color: cls.color } }, cls.name), h('div', { class: 'tt-sub' }, cls.subject)]
+      ? [h('div', { class: 'tt-name', style: { color: cls.color } }, cls.grade ? `${cls.grade}-${cls.room}` : cls.name), h('div', { class: 'tt-sub' }, cls.subject)]
       : []));
   };
   const current = (cell) => (pending.has(cell.dataset.key) ? pending.get(cell.dataset.key) : cell.dataset.classId || null);
@@ -158,48 +161,90 @@ function grid(st) {
       h('tbody', {}, periods.map((p) => h('tr', {}, h('td', { class: 'period' }, `${p}교시`), days.map((d) => cell(d, p)))))));
 }
 
+// '1~5', '1-3', '1,3,5', '2' → [1,2,3,4,5] 등
+function parseRooms(text) {
+  const out = new Set();
+  for (const part of text.split(/[,\s]+/).filter(Boolean)) {
+    const m = /^(\d{1,2})\s*[~-]\s*(\d{1,2})$/.exec(part);
+    if (m) for (let i = Number(m[1]); i <= Number(m[2]); i++) out.add(i);
+    else if (/^\d{1,2}$/.test(part)) out.add(Number(part));
+  }
+  return [...out].filter((n) => n > 0);
+}
+
+const GRADES = [1, 2, 3, 4, 5, 6];
+
 function classPanel(classes) {
-  const hours = (id) => S.data.timetable_slots.filter((s) => s.class_id === id).length;
   const subjects = S.subjects();
 
   const row = (c) => {
     const save = async (patch) => {
-      try { await S.update('classes', c.id, patch); } catch (err) { showError(err); }
+      try {
+        const next = { ...c, ...patch };
+        if (next.grade && next.room) patch.name = `${next.grade}학년 ${next.room}반`;
+        await S.update('classes', c.id, patch);
+      } catch (err) { showError(err); }
     };
-    return h('div', { class: 'row', style: { padding: '6px 0', borderBottom: '1px solid var(--border)' } },
+    return h('div', { class: 'row class-row' },
       h('input', { type: 'color', value: c.color, onChange: (e) => save({ color: e.target.value }) }),
-      h('input', { type: 'text', value: c.name, style: { width: '80px' }, onChange: (e) => e.target.value.trim() && save({ name: e.target.value.trim() }) }),
-      h('input', { type: 'text', value: c.subject, list: 'subject-list', style: { width: '90px' }, onChange: (e) => e.target.value.trim() && save({ subject: e.target.value.trim() }) }),
-      h('span', { class: 'muted small grow', style: { whiteSpace: 'nowrap' } }, `주 ${hours(c.id)}시간`),
+      h('select', { value: String(c.grade || ''), onChange: (e) => save({ grade: Number(e.target.value) || null }) },
+        c.grade ? null : h('option', { value: '' }, c.name || '학년'),
+        GRADES.map((g) => h('option', { value: String(g) }, `${g}학년`))),
+      h('input', { type: 'number', min: 1, max: 30, value: c.room ?? '', placeholder: '반', style: { width: '56px' }, onChange: (e) => Number(e.target.value) > 0 && save({ room: Number(e.target.value) }) }),
+      h('span', { class: 'small muted' }, '반'),
+      h('input', { type: 'text', value: c.subject, list: 'subject-list', style: { width: '72px' }, onChange: (e) => e.target.value.trim() && save({ subject: e.target.value.trim() }) }),
+      h('span', { class: 'grow' }),
       h('button', {
         class: 'icon-btn danger', title: '삭제',
         onClick: async () => {
           const n = S.data.lessons.filter((l) => l.class_id === c.id).length;
-          const ok = await confirmDialog(`'${c.name} ${c.subject}' 반을 삭제할까요?${n ? `\n이 반의 수업 기록 ${n}건도 함께 삭제됩니다.` : ''}`);
+          const ok = await confirmDialog(`'${S.classLabel(c)}' 반을 삭제할까요?${n ? `\n⚠️ 이 반의 수업 기록 ${n}건과 반 메모도 함께 삭제됩니다.\n새 학년도가 되어도 지난 반은 지우지 않아도 됩니다. (자동으로 '지난 학년도 반'으로 넘어갑니다)` : ''}`);
           if (!ok) return;
-          try { await S.remove('classes', { id: c.id }, ['timetable_slots', 'lessons', 'lesson_materials']); toast('삭제했습니다.'); } catch (err) { showError(err); }
+          try { await S.remove('classes', { id: c.id }); toast('삭제했습니다.'); } catch (err) { showError(err); }
         },
       }, '✕'));
   };
 
-  const name = h('input', { type: 'text', placeholder: '반 (예: 2-3)', style: { width: '110px' } });
-  const subject = h('input', { type: 'text', placeholder: '과목', list: 'subject-list', style: { width: '100px' }, value: subjects[0] || '' });
+  const last = classes[classes.length - 1];
+  const grade = h('select', { value: String(last?.grade || 1) }, GRADES.map((g) => h('option', { value: String(g) }, `${g}학년`)));
+  const rooms = h('input', { type: 'text', placeholder: '반 (예: 3 또는 1~5)', style: { width: '150px' } });
+  const subject = h('input', { type: 'text', placeholder: '과목', list: 'subject-list', style: { width: '90px' }, value: last?.subject || subjects[0] || '' });
   const add = async (e) => {
     e.preventDefault();
-    const n = name.value.trim();
-    const s = subject.value.trim();
-    if (!n || !s) return toast('반 이름과 과목을 입력하세요.', 'error');
+    const g = Number(grade.value);
+    const list = parseRooms(rooms.value);
+    const sj = subject.value.trim();
+    if (!list.length || !sj) return toast('반 번호와 과목을 입력하세요.', 'error');
+    const year = thisYear();
+    const exists = (r) => S.classesOfYear(year).some((c) => c.grade === g && c.room === r && c.subject === sj);
+    const fresh = list.filter((r) => !exists(r));
+    if (!fresh.length) return toast('이미 있는 반입니다.', 'error');
     try {
-      await S.insert('classes', { name: n, subject: s, color: PALETTE[S.data.classes.length % PALETTE.length], sort: S.data.classes.length });
-      toast(`${n} ${s} 반을 추가했습니다.`, 'ok');
+      let i = S.classesOfYear(year).length;
+      await S.db.from('classes').insert(fresh.map((r) => ({
+        name: `${g}학년 ${r}반`, grade: g, room: r, subject: sj, year, color: PALETTE[i++ % PALETTE.length], sort: i,
+      })));
+      rooms.value = '';
+      toast(`${g}학년 ${fresh.join(', ')}반 ${sj}을(를) 추가했습니다.`, 'ok');
     } catch (err) { showError(err); }
   };
 
   return h('div', { class: 'card' },
-    h('h3', {}, '수업하는 반'),
-    h('datalist', { id: 'subject-list' }, subjects.map((s) => h('option', { value: s }))),
+    h('h3', {}, `${thisYear()}학년도 담당 반`),
+    h('datalist', { id: 'subject-list' }, subjects.map((sj) => h('option', { value: sj }))),
     classes.length ? classes.map(row) : h('p', { class: 'muted' }, '아직 반이 없습니다.'),
     h('form', { class: 'row', style: { marginTop: '12px' }, onSubmit: add },
-      name, subject, h('button', { class: 'btn btn-primary', type: 'submit' }, '추가')),
-    h('p', { class: 'muted small', style: { marginBottom: 0 } }, '같은 반이라도 과목이 다르면 따로 추가하세요. 진도는 과목별 단원·차시 목록을 기준으로 기록됩니다.'));
+      grade, rooms, subject, h('button', { class: 'btn btn-primary', type: 'submit' }, '추가')),
+    h('p', { class: 'muted small', style: { marginBottom: 0 } }, '반 칸에 1~5 처럼 쓰면 여러 반을 한 번에 추가합니다. 같은 반이라도 과목이 다르면 따로 추가하세요(예: 1학년 1반 국어, 1학년 1반 독서). 반은 학년도마다 따로 만들고, 지난 학년도 반의 기록은 그대로 남습니다.'));
+}
+
+// 지난 학년도 반: 기록을 볼 수 있게 링크만 둔다
+function pastClassesPanel() {
+  const years = [...new Set(S.data.classes.map(S.classYear))].filter((y) => y < thisYear()).sort((a, b) => b - a);
+  if (!years.length) return null;
+  return h('div', { class: 'card' },
+    h('h3', {}, '지난 학년도 반'),
+    years.map((y) => h('div', { class: 'row', style: { marginBottom: '6px' } },
+      h('strong', { class: 'small' }, `${y}학년도`),
+      S.classesOfYear(y).map((c) => h('a', { href: `#/class/${c.id}` }, S.classLabel(c))))));
 }

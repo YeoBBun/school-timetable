@@ -1,4 +1,4 @@
-// 설정: 교시 수, 수업 요일, 휴업일, 백업, 로그아웃
+// 설정: 교시 수, 수업 요일, 2학기 시작일, 휴업일, 백업, 로그아웃
 import { h, append, toast, showError, confirmDialog, fmtDateLong, todayStr, downloadText } from '../ui.js';
 import * as S from '../store.js';
 import { signOut } from '../app.js';
@@ -9,7 +9,7 @@ export default function render(root) {
 
   const saveSettings = async (patch) => {
     try {
-      await S.upsert('settings', { user_id: S.session.user.id, periods: st.periods, weekdays: st.weekdays, ...patch }, 'user_id');
+      await S.upsert('settings', { periods: st.periods, weekdays: st.weekdays, sem2_start: st.sem2_start, ...patch }, 'user_id');
       toast('저장했습니다.', 'ok');
     } catch (err) { showError(err); }
   };
@@ -18,6 +18,12 @@ export default function render(root) {
     [4, 5, 6, 7, 8, 9, 10].map((n) => h('option', { value: String(n) }, `${n}교시`)));
   const weekdays = h('select', { value: String(st.weekdays), onChange: (e) => saveSettings({ weekdays: Number(e.target.value) }) },
     h('option', { value: '5' }, '월 ~ 금'), h('option', { value: '6' }, '월 ~ 토'));
+  // 2학기 시작일: 올해 날짜로 보여 주고 월-일만 저장한다
+  const year = new Date().getFullYear();
+  const sem2 = h('input', {
+    type: 'date', value: `${year}-${st.sem2_start}`,
+    onChange: (e) => e.target.value && saveSettings({ sem2_start: e.target.value.slice(5) }),
+  });
 
   // 휴업일
   const offDate = h('input', { type: 'date', value: todayStr() });
@@ -60,7 +66,7 @@ export default function render(root) {
       h('div', {},
         h('div', { class: 'card' },
           h('h3', {}, '휴업일 · 수업 없는 날'),
-          h('p', { class: 'muted small', style: { marginTop: 0 } }, '여기 등록한 날은 오늘 수업 화면에 시간표가 나타나지 않습니다.'),
+          h('p', { class: 'muted small', style: { marginTop: 0 } }, "여기 등록한 날은 '오늘' 화면에 시간표가 나타나지 않습니다."),
           h('form', { class: 'row', onSubmit: addOff }, offDate, offNote, h('button', { class: 'btn btn-primary', type: 'submit' }, '추가')),
           offs.length
             ? h('table', { class: 'table', style: { marginTop: '12px' } }, h('tbody', {}, offs.map((o) => h('tr', {},
@@ -75,6 +81,10 @@ export default function render(root) {
         h('div', { class: 'card' },
           h('h3', {}, '시간표'),
           h('div', { class: 'row' }, h('label', {}, '하루 교시 수', periods), h('label', {}, '수업 요일', weekdays))),
+        h('div', { class: 'card' },
+          h('h3', {}, '학년도 · 학기'),
+          h('div', { class: 'row' }, h('label', {}, '2학기 시작일', sem2)),
+          h('p', { class: 'muted small', style: { marginBottom: 0 } }, '학년도는 3월 1일에 시작합니다. 기록과 자료는 날짜에 따라 학기별로 정리됩니다(1~2월은 앞 학년도 2학기).')),
         h('div', { class: 'card' },
           h('h3', {}, '데이터'),
           h('p', { class: 'muted small', style: { marginTop: 0 } }, "모든 기록은 구글 드라이브 '진도관리' 폴더의 '진도관리-데이터.json' 파일에 자동으로 저장됩니다. 따로 백업해 두려면 아래에서 내려받으세요. (수업 자료 파일은 '수업 자료' 폴더에 있습니다)"),

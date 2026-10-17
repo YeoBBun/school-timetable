@@ -1,20 +1,21 @@
 import * as G from './google.js';
 import * as S from './store.js';
 import { h, toast, showError } from './ui.js';
-import today from './views/today.js';
+import home from './views/home.js';
+import classpage from './views/classpage.js';
+import search from './views/search.js';
 import timetable from './views/timetable.js';
-import progress from './views/progress.js';
-import curriculum from './views/curriculum.js';
 import materials from './views/materials.js';
 import settings from './views/settings.js';
 
+// nav: false 인 화면은 메뉴에 없고 링크로만 들어간다 (#/class/반id)
 const ROUTES = [
-  { path: 'today', label: '오늘 수업', view: today },
-  { path: 'progress', label: '반별 진도', view: progress },
-  { path: 'timetable', label: '시간표 · 반', view: timetable },
-  { path: 'curriculum', label: '단원 · 차시', view: curriculum },
+  { path: 'today', label: '오늘', view: home },
+  { path: 'search', label: '찾기', view: search },
   { path: 'materials', label: '수업 자료', view: materials },
+  { path: 'timetable', label: '시간표 · 반', view: timetable },
   { path: 'settings', label: '설정', view: settings },
+  { path: 'class', view: classpage, nav: false, parent: 'today' },
 ];
 
 const app = document.getElementById('app');
@@ -26,16 +27,18 @@ export function go(path) {
   else location.hash = `#/${path}`;
 }
 
+// '#/class/abc' → class 화면 + arg 'abc'
 function currentRoute() {
-  const path = location.hash.replace(/^#\/?/, '');
-  return ROUTES.find((r) => r.path === path) || ROUTES[0];
+  const [path, arg] = location.hash.replace(/^#\/?/, '').split('/');
+  const route = ROUTES.find((r) => r.path === path) || ROUTES[0];
+  return { ...route, arg: arg ? decodeURIComponent(arg) : undefined };
 }
 
 const SYNC_LABEL = { on: '드라이브에 저장됨', saving: '저장 중…', error: '저장 실패 · 다시 시도 중', auth: '구글 다시 연결 필요', off: '연결 중…' };
 
 function syncBadge() {
   const st = S.sync.status;
-  const badge = h('div', { class: `sync sync-${st}`, id: 'sync-badge', title: S.sync.message || '구글 드라이브의 진도관리 폴더에 자동으로 저장됩니다' },
+  const badge = h('div', { class: `sync sync-${st}`, id: st === 'auth' ? null : 'sync-badge', title: S.sync.message || '구글 드라이브의 진도관리 폴더에 자동으로 저장됩니다' },
     h('span', { class: 'dot' }), SYNC_LABEL[st] || st);
   if (st !== 'auth') return badge;
   return h('div', { id: 'sync-badge' }, badge,
@@ -55,7 +58,7 @@ function shell() {
   const route = currentRoute();
   viewEl = h('main', { class: 'view', id: 'view' });
   const nav = h('nav', { class: 'nav' },
-    ROUTES.map((r) => h('a', { href: `#/${r.path}`, class: r === route ? 'active' : '' }, r.label)));
+    ROUTES.filter((r) => r.nav !== false).map((r) => h('a', { href: `#/${r.path}`, class: r.path === (route.parent || route.path) ? 'active' : '' }, r.label)));
   const side = h('aside', { class: 'sidebar' },
     h('div', { class: 'brand' }, '진도관리'),
     nav,
@@ -77,13 +80,14 @@ export function render({ remote = false } = {}) {
   }
   renderPending = false;
   const route = currentRoute();
-  document.querySelectorAll('.nav a').forEach((a) => a.classList.toggle('active', a.getAttribute('href') === `#/${route.path}`));
+  document.querySelectorAll('.nav a').forEach((a) => a.classList.toggle('active', a.getAttribute('href') === `#/${route.parent || route.path}`));
   const scroll = viewEl.scrollTop;
-  const sameView = viewEl.dataset.route === route.path;
-  viewEl.dataset.route = route.path;
+  const key = `${route.path}/${route.arg ?? ''}`;
+  const sameView = viewEl.dataset.route === key;
+  viewEl.dataset.route = key;
   viewEl.replaceChildren();
   try {
-    route.view(viewEl);
+    route.view(viewEl, route.arg);
   } catch (err) {
     showError(err);
   }

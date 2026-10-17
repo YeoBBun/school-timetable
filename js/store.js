@@ -4,7 +4,9 @@
 // 합칠 때는 항목마다 마지막으로 바뀐 시각(_u)이 더 늦은 쪽을 남기고, 지운 항목은 지운 시각(tomb)으로 기억한다.
 import * as G from './google.js';
 
-export const TABLES = ['classes', 'curriculum_items', 'timetable_slots', 'timetable_changes', 'lessons', 'materials', 'item_materials', 'lesson_materials', 'days_off', 'settings'];
+// curriculum_items · item_materials 는 예전 버전(차시 목록) 데이터를 보존하려고 남겨 둔다
+export const TABLES = ['classes', 'curriculum_items', 'timetable_slots', 'timetable_changes', 'lessons', 'materials', 'item_materials', 'lesson_materials', 'days_off', 'settings',
+  'units', 'class_notes', 'folders'];
 const DATA_FILE = '진도관리-데이터.json';
 const POLL_MS = 30_000;
 const TOMB_KEEP_MS = 90 * 24 * 3600 * 1000;
@@ -12,15 +14,18 @@ const CACHE_KEY = 'jindo.cache';
 const CACHE_MAX_AGE = 60 * 24 * 3600 * 1000; // 지운 기록(90일)보다 짧게: 오래된 사본이 지운 항목을 되살리지 않도록
 
 // 기본키가 id 가 아닌 테이블
-const KEYS = { item_materials: ['item_id', 'material_id'], lesson_materials: ['lesson_id', 'material_id'], settings: ['user_id'] };
+// folders: 드라이브 폴더 위치 (key 예: 'y:2026', 's:2026:2', 'j:2026:2:국어', 'u:<단원 id>', 'p:<단원 id>:lesson')
+const KEYS = { item_materials: ['item_id', 'material_id'], lesson_materials: ['lesson_id', 'material_id'], settings: ['user_id'], folders: ['key'] };
 const DEFAULTS = {
   classes: { color: '#4f7cff', sort: 0 },
   curriculum_items: { unit: '', seq: 0 },
   timetable_changes: { note: '', class_id: null },
   lessons: { memo: '', period: null, curriculum_item_id: null },
-  materials: { kind: 'file', subject: null },
+  materials: { kind: 'file', subject: null, unit_id: null, purpose: 'lesson' },
   days_off: { note: '' },
-  settings: { periods: 7, weekdays: 5 },
+  settings: { periods: 7, weekdays: 5, sem2_start: '08-01' },
+  units: { sort: 0 },
+  class_notes: { done: false },
 };
 
 export const data = Object.fromEntries(TABLES.map((t) => [t, []]));
@@ -121,6 +126,7 @@ export function loadAll() {
       remoteVersion = created.version;
     }
     loaded = true;
+    migrate();
     writeCache();
     emit(true);
     if (dirty) await save(); // 사본에 밀린 수정이 있으면 이어서 저장
@@ -293,6 +299,10 @@ function cascadeDelete(table, row, stamp) {
     del('timetable_slots', (r) => r.class_id === row.id);
     del('timetable_changes', (r) => r.class_id === row.id);
     del('lessons', (r) => r.class_id === row.id);
+    del('class_notes', (r) => r.class_id === row.id);
+  }
+  if (table === 'units') {
+    for (const t of ['lessons', 'materials']) for (const r of data[t]) if (r.unit_id === row.id) { r.unit_id = null; r._u = stamp; }
   }
   if (table === 'lessons') del('lesson_materials', (r) => r.lesson_id === row.id);
   if (table === 'materials') {
@@ -384,16 +394,36 @@ export const classById = (id) => data.classes.find((c) => c.id === id);
 export const itemById = (id) => data.curriculum_items.find((i) => i.id === id);
 export const materialById = (id) => data.materials.find((m) => m.id === id);
 
+// 과목 → 학년 → 반 순 (같은 과목 반끼리 나란히 놓여 진도를 비교하기 쉽다)
 export function sortedClasses(subject) {
   return data.classes
     .filter((c) => !subject || c.subject === subject)
-    .sort((a, b) => a.sort - b.sort || koSort(a.subject, b.subject) || koSort(a.name, b.name));
+    .sort((a, b) => koSort(a.subject || '', b.subject || '') || (a.grade ?? 99) - (b.grade ?? 99)
+      || (a.room ?? 99) - (b.room ?? 99) || a.sort - b.sort || koSort(a.name, b.name));
 }
 
-export function itemsOf(subject) {
-  return data.curriculum_items
-    .filter((i) => i.subject === subject)
-    .sort((a, b) => a.seq - b.seq || a.created_at.localeCompare(b.created_at));
+// '1학년 1반' (그 학년도에 과목이 여러 개면 '1학년 1반 독서'처럼 과목을 붙인다)
+export function classLabel(c) {
+  if (!c) return '(삭제된 반)';
+  const base = c.grade ? `${c.grade}학년 ${c.room}반` : c.name;
+  return subjectsOfYear(classYear(c)).length > 1 && c.subject ? `${base} ${c.subject}` : base;
+}
+export function subjectsOfYear(year) {
+  return [...new Set(data.classes.filter((c) => classYear(c) === year).map((c) => c.subject).filter(Boolean))].sort(koSort);
+}
+
+// 예전 '101반' 같은 이름을 학년 · 반 숫자로 나눈다 (드라이브를 읽은 뒤 한 번)
+function migrate() {
+  const stamp = now();
+  let changed = false;
+  for (const c of data.classes) {
+    if (c.grade != null) continue;
+    const m = /^(\d)(\d{2})반?$/.exec((c.name || '').trim()) || /^(\d)\s*-\s*(\d{1,2})$/.exec((c.name || '').trim());
+    if (!m) continue;
+    Object.assign(c, { grade: Number(m[1]), room: Number(m[2]), name: `${Number(m[1])}학년 ${Number(m[2])}반`, _u: stamp });
+    changed = true;
+  }
+  if (changed) scheduleSave();
 }
 
 export function subjects() {
@@ -418,7 +448,93 @@ export function effectiveSlots(date, weekday) {
 }
 
 export function settings() {
-  return data.settings[0] || { periods: 7, weekdays: 5 };
+  return { periods: 7, weekdays: 5, sem2_start: '08-01', ...data.settings[0] };
+}
+
+// ---- 학년도 · 학기 ----
+// 학년도는 3월에 시작한다(1~2월은 앞 학년도 2학기). 2학기 시작일은 설정에서 바꿀 수 있다
+export function termOf(dateStr) {
+  const [y, m] = dateStr.split('-').map(Number);
+  const year = m < 3 ? y - 1 : y;
+  const semester = m >= 3 && dateStr.slice(5) < settings().sem2_start ? 1 : 2;
+  return { year, semester };
+}
+export const termLabel = (t) => `${t.year}학년도 ${t.semester}학기`;
+export const sameTerm = (a, b) => a.year === b.year && a.semester === b.semester;
+
+// 반의 학년도 (예전 데이터는 만든 날짜로 정한다)
+export const classYear = (c) => c.year ?? termOf(c.created_at.slice(0, 10)).year;
+
+// 그 학년도의 반만 (지난 학년도 반은 기록 보존용으로 남는다)
+export function classesOfYear(year) {
+  return sortedClasses().filter((c) => classYear(c) === year);
+}
+
+// ---- 단원 (학년도 · 학기마다) ----
+export const unitById = (id) => data.units.find((u) => u.id === id);
+// 단원은 학기 + 과목마다 (과목이 비어 있으면 모든 과목에 보인다)
+export function unitsOf(term, subject) {
+  return data.units.filter((u) => sameTerm(u, term) && (!subject || !u.subject || u.subject === subject))
+    .sort((a, b) => a.sort - b.sort || koSort(a.name, b.name));
+}
+export async function addUnit(term, subject, name) {
+  const sort = unitsOf(term, subject).reduce((m, u) => Math.max(m, u.sort), 0) + 10;
+  return insert('units', { year: term.year, semester: term.semester, subject: subject || null, name, sort });
+}
+// 단원 이름을 바꾸면 드라이브 폴더 이름도 바꾼다
+export async function renameUnit(unit, name) {
+  await update('units', unit.id, { name });
+  const f = data.folders.find((r) => r.key === `u:${unit.id}`);
+  if (f) await G.renameFile(f.folder_id, name);
+}
+
+// ---- 수업 기록 ----
+// 기록에 보이는 글: 새 방식은 memo, 예전 방식은 차시 제목
+export function lessonText(l) {
+  return l.memo || itemById(l.curriculum_item_id)?.title || '';
+}
+// 그 반이 마지막으로 쓴 단원 (같은 학기 안에서)
+export function lastUnitOf(classId, term) {
+  const list = lessonsOfClass(classId).filter((l) => l.unit_id && sameTerm(termOf(l.date), term));
+  return list.length ? list[list.length - 1].unit_id : null;
+}
+export const notesOfClass = (classId) => data.class_notes.filter((n) => n.class_id === classId)
+  .sort((a, b) => a.created_at.localeCompare(b.created_at));
+// 이 자료가 쓰인 수업 기록
+export function lessonsOfMaterial(materialId) {
+  const ids = new Set(data.lesson_materials.filter((lm) => lm.material_id === materialId).map((lm) => lm.lesson_id));
+  return data.lessons.filter((l) => ids.has(l.id)).sort(lessonOrder);
+}
+
+// ---- 자료 폴더: 수업 자료/2026학년도/2학기/과목/단원/수업|평가 ----
+async function folderFor(key, name, parentId) {
+  const found = data.folders.find((f) => f.key === key);
+  if (found) return found.folder_id;
+  const id = await G.ensureFolder(name, parentId);
+  await upsert('folders', { key, folder_id: id });
+  return id;
+}
+// 드라이브에서 폴더를 지웠을 수도 있으니 이번 실행에서 처음 쓸 때 한 번 확인한다
+const checkedFolders = new Set();
+export async function materialFolder(where) {
+  const id = await findMaterialFolder(where);
+  if (checkedFolders.has(id)) return id;
+  let ok = true;
+  try { ok = !(await G.fileMeta(id)).trashed; } catch (err) { if (err.status === 404) ok = false; else throw err; }
+  if (ok) { checkedFolders.add(id); return id; }
+  // 기억해 둔 폴더 위치를 버리고 이름으로 다시 찾거나 만든다
+  await db.from('folders').delete().in('key', data.folders.map((f) => f.key));
+  return findMaterialFolder(where);
+}
+async function findMaterialFolder({ year, semester, subject, unitId, purpose }) {
+  const y = await folderFor(`y:${year}`, `${year}학년도`, drive.materialsId);
+  const s = await folderFor(`s:${year}:${semester}`, `${semester}학기`, y);
+  const unit = unitId && unitById(unitId);
+  const subj = unit?.subject || subject;
+  const j = subj ? await folderFor(`j:${year}:${semester}:${subj}`, subj, s) : s;
+  if (!unit) return j;
+  const u = await folderFor(`u:${unit.id}`, unit.name, j);
+  return folderFor(`p:${unit.id}:${purpose}`, purpose === 'eval' ? '평가' : '수업', u);
 }
 
 export const lessonOrder = (a, b) => a.date.localeCompare(b.date) || (a.period ?? 99) - (b.period ?? 99);
@@ -432,43 +548,4 @@ export function materialsOfLesson(lessonId) {
     .filter((lm) => lm.lesson_id === lessonId)
     .map((lm) => materialById(lm.material_id))
     .filter(Boolean);
-}
-
-// 차시에 붙은 자료 (모든 반 공용)
-export function materialsOfItem(itemId) {
-  if (!itemId) return [];
-  return data.item_materials
-    .filter((im) => im.item_id === itemId)
-    .sort((a, b) => a.created_at.localeCompare(b.created_at))
-    .map((im) => materialById(im.material_id))
-    .filter(Boolean);
-}
-
-export function itemsOfMaterial(materialId) {
-  return data.item_materials
-    .filter((im) => im.material_id === materialId)
-    .map((im) => itemById(im.item_id))
-    .filter(Boolean);
-}
-
-export async function linkItemMaterials(itemId, materialIds) {
-  if (!itemId || !materialIds.length) return;
-  await upsert('item_materials', materialIds.map((id) => ({ item_id: itemId, material_id: id, user_id: session.user.id })), 'item_id,material_id');
-}
-
-// 차시 추가 (목록 맨 뒤)
-export async function addItem(subject, unit, title) {
-  const seq = itemsOf(subject).reduce((m, i) => Math.max(m, i.seq), 0) + 10;
-  return insert('curriculum_items', { subject, unit, title, seq });
-}
-
-export function itemLabel(item) {
-  if (!item) return '';
-  return item.unit ? `${item.unit} · ${item.title}` : item.title;
-}
-
-// 수업 기록에 보이는 모든 자료: 차시 자료 + 이 반에만 붙인 자료
-export function lessonAllMaterials(lesson) {
-  const list = [...materialsOfItem(lesson.curriculum_item_id), ...materialsOfLesson(lesson.id)];
-  return [...new Set(list)];
 }
