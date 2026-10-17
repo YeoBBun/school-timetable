@@ -27,9 +27,9 @@ export function renderStudentsTab(root, cls) {
       h('td', {}, h('select', { value: s.gender || '', onChange: (e) => save(s, { gender: e.target.value }) },
         h('option', { value: '' }, '-'), Object.entries(GENDER).map(([k, v]) => h('option', { value: k }, v)))),
       h('td', { class: 'center' }, String(S.stickerCount(cls.id, s.id, term) || '')),
-      h('td', { class: 'clickable small', onClick: () => studentDialog(s, cls) },
-        notes.length ? [h('span', {}, notes[0].text), notes.length > 1 ? h('span', { class: 'muted' }, ` 외 ${notes.length - 1}개`) : null]
-          : h('span', { class: 'muted' }, '+ 메모')),
+      h('td', {}, h('div', { class: 'memo-cell' },
+        h('button', { class: 'btn btn-sm', onClick: () => studentDialog(s, cls) }, notes.length ? `📝 메모 ${notes.length}` : '📝 메모 쓰기'),
+        notes.length ? h('span', { class: 'small memo-last', onClick: () => studentDialog(s, cls) }, h('span', { class: 'muted' }, `${fmtMD(notes[0].date)} `), notes[0].text) : null)),
       h('td', { class: 'right' }, h('button', { class: 'icon-btn danger', title: '학생 삭제', onClick: () => removeStudent(s) }, '✕')));
   });
 

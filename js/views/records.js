@@ -1,5 +1,5 @@
 // 수업 기록 · 반 메모 공용 창 (첫 화면과 반 화면에서 함께 쓴다)
-import { h, toast, showError, modal, confirmDialog, weekdayOf, fmtDateLong } from '../ui.js';
+import { h, toast, showError, modal, confirmDialog, weekdayOf, fmtDateLong, fmtMD, todayStr, toDateStr } from '../ui.js';
 import * as S from '../store.js';
 import { attachDialog, matLink, unitSelect } from './materials.js';
 
@@ -89,9 +89,13 @@ export function copyDialog(l) {
 }
 
 // 반 메모 (예: 활동지 아직 안 걷음). 체크하면 끝난 메모로 넘어간다
+// 반 메모 날짜 (예전 메모는 만든 시각으로)
+export const noteDate = (n) => n.date || toDateStr(new Date(n.created_at));
+
 export function noteDialog(cls, note = null) {
   const text = h('input', { type: 'text', value: note?.text || '', placeholder: '예: 활동지 아직 안 걷음, 다음 시간 발표부터' });
-  modal(`${S.classLabel(cls)} 반 메모`, [h('label', {}, '메모', text)], [
+  const date = h('input', { type: 'date', value: note ? noteDate(note) : todayStr() });
+  modal(`${S.classLabel(cls)} 반 메모`, [h('label', {}, '메모', text), h('label', {}, '날짜', date)], [
     note ? { label: '삭제', danger: true, onClick: () => S.remove('class_notes', { id: note.id }) } : null,
     { label: '취소' },
     {
@@ -99,8 +103,9 @@ export function noteDialog(cls, note = null) {
       onClick: async () => {
         const t = text.value.trim();
         if (!t) { toast('메모를 입력하세요.'); return false; }
-        if (note) await S.update('class_notes', note.id, { text: t });
-        else await S.insert('class_notes', { class_id: cls.id, text: t });
+        const d = date.value || todayStr();
+        if (note) await S.update('class_notes', note.id, { text: t, date: d });
+        else await S.insert('class_notes', { class_id: cls.id, text: t, date: d });
       },
     },
   ].filter(Boolean));
@@ -116,7 +121,7 @@ export function noteItem(n, cls) {
       type: 'checkbox', checked: n.done, title: n.done ? '다시 열기' : '끝냄',
       onChange: (e) => S.update('class_notes', n.id, { done: e.target.checked, done_at: e.target.checked ? new Date().toISOString() : null }).catch(showError),
     }),
-    h('span', { class: 'grow note-text', onClick: () => noteDialog(cls, n) }, n.text));
+    h('span', { class: 'grow note-text', onClick: () => noteDialog(cls, n) }, h('span', { class: 'note-date' }, fmtMD(noteDate(n))), n.text));
 }
 
 export const fmtRecordDate = (l) => `${fmtDateLong(l.date)}${l.period ? ` ${l.period}교시` : ''}`;

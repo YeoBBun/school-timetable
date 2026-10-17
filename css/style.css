@@ -403,3 +403,6 @@ a.tab.active { color: #fff; }
 .tv-ask-del { background: #3a1f24; color: #ff9a9a; border-color: #6b2f37 !important; }
 .tv-ask-del:disabled { opacity: .35; cursor: default; }
 .tv-ask-cancel { background: #262e3d; color: #cfd6e4; }
+.note-date { color: var(--muted); font-size: 12px; margin-right: 6px; }
+.memo-cell { display: flex; align-items: center; gap: 8px; }
+.memo-last { cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
