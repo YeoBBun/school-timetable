@@ -26,7 +26,7 @@ export default function render(root, id) {
 
   append(root,
     h('div', { class: 'page-head' },
-      h('h2', { class: 'row' }, classChip(cls), h('span', {}, cls.subject || ''), h('span', { class: 'muted small' }, `${S.classYear(cls)}학년도`)),
+      h('h2', { class: 'row' }, classChip(cls, S.classLabel(cls)), h('span', { class: 'muted small' }, [`${S.classYear(cls)}학년도`, cls.subject].filter(Boolean).join(' · '))),
       h('a', { class: 'btn', href: '#/today' }, '← 첫 화면'),
       lessons.length ? h('button', { class: 'btn', onClick: () => exportCsv(cls) }, 'CSV 내려받기') : null),
     h('div', { class: 'cols' },
@@ -62,5 +62,5 @@ function exportCsv(cls) {
     rows.push([l.date, l.period ?? '', S.unitById(l.unit_id)?.name || '', S.lessonText(l), S.materialsOfLesson(l.id).map((m) => m.name).join(', ')]);
   }
   // 엑셀에서 한글이 깨지지 않도록 BOM 을 붙인다
-  downloadText(`${cls.name}-수업기록-${todayStr()}.csv`, `﻿${rows.map((r) => r.map(esc).join(',')).join('\r\n')}`, 'text/csv');
+  downloadText(`${S.classLabel(cls)}-수업기록-${todayStr()}.csv`, `﻿${rows.map((r) => r.map(esc).join(',')).join('\r\n')}`, 'text/csv');
 }

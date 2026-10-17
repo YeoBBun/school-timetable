@@ -71,7 +71,7 @@ python serve.py
 ### 여러 기기에서 쓰기 (무료 배포)
 배포하면 어디서든 접속할 수 있는 주소가 생깁니다.
 
-- **GitHub Pages**: 저장소 Settings → Pages 에서 `main` 브랜치를 고르면 `https://yeobbun.github.io/timetable/` 로 열립니다. 이 주소의 원본(`https://yeobbun.github.io`)을 OAuth 클라이언트의 승인된 JavaScript 원본에 꼭 추가하세요.
+- **GitHub Pages**: 저장소 Settings → Pages 에서 `main` 브랜치를 고르면 `https://yeobbun.github.io/school-timetable/` 로 열립니다. 이 주소의 원본(`https://yeobbun.github.io`)을 OAuth 클라이언트의 승인된 JavaScript 원본에 꼭 추가하세요.
 
 빌드 과정이 없는 정적 파일이라 폴더 그대로 올리면 됩니다.
 

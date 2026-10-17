@@ -33,8 +33,10 @@ serve.py            캐시 끈 로컬 서버 → http://localhost:5500
 - 테이블: classes, timetable_slots, timetable_changes, lessons, materials, lesson_materials, days_off, settings, units, class_notes, folders
   (curriculum_items · item_materials 는 예전 '차시 목록' 방식의 데이터 보존용으로만 남아 있고 화면에서는 안 씁니다. 예전 기록은 `lessonText()` 가 차시 제목을 대신 보여 줍니다.)
 - **학년도 · 학기**: `termOf(날짜)` — 3월 시작, 1~2월은 앞 학년도 2학기, 2학기 시작일은 settings.sem2_start('MM-DD', 기본 '08-01'). 반은 `year` 를 가지며(없으면 created_at 으로 계산) 첫 화면에는 그 학년도 반만 나옵니다. 단원(units)은 year+semester 마다.
+- **반(classes)**: grade · room · subject · year. 화면 이름은 `S.classLabel(c)` = '1학년 1반' (그 학년도 과목이 2개 이상이면 '1학년 1반 독서'). `name` 은 같은 글을 저장해 두는 예비값. 예전 '101반' 이름은 `migrate()` 가 드라이브를 읽은 뒤 학년·반으로 나눕니다. 같은 반이라도 과목이 다르면 반을 따로 만듭니다(국어 · 독서). 정렬은 과목 → 학년 → 반.
+- **단원(units)**: year · semester · subject 마다. `unitsOf(term, subject)`.
 - **기록(lessons)**: memo = 한 줄 내용, unit_id = 단원. 교시는 그날 시간표에서 아직 기록 없는 첫 교시를 자동으로(`freePeriod`).
-- **자료 폴더**: `materialFolder()` 가 `수업 자료/{year}학년도/{n}학기/{단원}/{수업|평가}` 를 만들고 id 를 folders 테이블(key: 'y:2026', 's:2026:2', 'u:단원id', 'p:단원id:lesson|eval')에 저장해 기기끼리 공유합니다. 처음 쓸 때 휴지통 여부를 확인하고, 지워졌으면 다시 만듭니다. 단원 이름을 바꾸면 폴더 이름도, 자료의 단원/구분을 바꾸면 파일도 옮깁니다(google.js renameFile/moveFile).
+- **자료 폴더**: `materialFolder()` 가 `수업 자료/{year}학년도/{n}학기/{과목}/{단원}/{수업|평가}` 를 만들고 id 를 folders 테이블(key: 'y:2026', 's:2026:2', 'j:2026:2:국어', 'u:단원id', 'p:단원id:lesson|eval')에 저장해 기기끼리 공유합니다. 처음 쓸 때 휴지통 여부를 확인하고, 지워졌으면 다시 만듭니다. 단원 이름을 바꾸면 폴더 이름도, 자료의 단원/구분을 바꾸면 파일도 옮깁니다(google.js renameFile/moveFile).
 - 화면 코드는 `S.db.from(table).insert/update/upsert/delete().eq/in/match` 같은 **supabase-js 비슷한 체인**을 씁니다. 메모리에서 바로 실행되고, 저장은 0.7초 디바운스로 묶여 드라이브에 씁니다.
 - **기기 간 병합**: 행마다 `_u`(마지막 수정 ms)를 두고, 지운 행은 `tomb[table][key] = 지운 시각`으로 기억합니다(90일 보관). 저장 직전 드라이브 파일 version 이 바뀌어 있으면 먼저 합치고 씁니다. 30초 폴링과 창 포커스 때도 확인합니다.
 - 기본키가 id 가 아닌 테이블: item_materials(item_id, material_id), lesson_materials(lesson_id, material_id), settings(user_id). user_id 는 항상 `'me'` 입니다.
@@ -58,10 +60,13 @@ serve.py            캐시 끈 로컬 서버 → http://localhost:5500
 1. **보안 보강** — 끝남
    - 링크 주소 검사: linkDialog · editDialog 둘 다 `normalizeUrl()` 로 `http(s)://` 가 아니면 `https://` 를 붙입니다.
    - 공용 PC 모드: 사용자가 학교 PC도 혼자 쓴다고 해서 **만들지 않기로** 했습니다.
-2. **GitHub Pages 배포** — 사용자가 켰습니다(main, `/ (root)`). 주소: `https://yeobbun.github.io/timetable/`. main 에 합치면 몇 분 뒤 반영됩니다.
+2. **GitHub Pages 배포** — 사용자가 켰습니다(main, `/ (root)`). 주소: `https://yeobbun.github.io/school-timetable/`. main 에 합치면 몇 분 뒤 반영됩니다.
 3. **반별 수업관리 앱으로 개편** (사용자 요청, 2026-10-17)
    - 1단계 끝: 첫 화면(오늘 시간표 + 담당 반), 한 줄 기록, 반 메모, 찾기, 자료 자동 폴더 정리, 학년도·학기.
-   - 2단계(나이스 파일 견본 필요, 사용자가 월요일에 올려 주기로 함): 학급 명렬표 엑셀을 올리면 학생 목록 생성, 학생 메모, 수행평가 점수 입력 → **나이스에서 받은 양식에 점수를 채워** 일괄 입력용 엑셀 내려받기, 조 편성, 칭찬 스티커(가칭). 개인정보는 사용자가 학교에 확인해 괜찮다고 함. 견본 파일은 공개 저장소에 절대 올리지 말고 드라이브로 받기.
+   - 2단계(나이스 파일 견본 필요, 사용자가 월요일에 올려 주기로 함): 학급 명렬표 엑셀을 올리면 학생 목록 생성, 학생 메모, 수행평가 점수 입력 → **나이스에서 받은 양식에 점수를 채워** 일괄 입력용 엑셀 내려받기, 조 편성, 칭찬 스티커(가칭).
+     - 학생은 반-과목이 아니라 **학년도 + 학년 + 반** 단위로 두어 국어 · 독서 반이 같은 명단을 쓰게 할 것.
+     - 조 편성: "경우의 수를 다 반영" — 무작위, 특정 학생끼리 붙이기 / 떼어 놓기, 조 수 또는 조 인원, 성별 · 수준 고르게, 조장 지정, 손으로 옮기기(끌어다 놓기), 지난 조와 겹치지 않게, 결과 저장 · 다시 불러오기.
+     - 칭찬 스티커: 수업 중 **TV 화면에 띄워** 보여 줌 → 큰 글씨 전체 화면 모드, 학생(또는 조) 누르면 +1, 되돌리기. 개인정보는 사용자가 학교에 확인해 괜찮다고 함. 견본 파일은 공개 저장소에 절대 올리지 말고 드라이브로 받기.
    - 3단계: 구글 캘린더 연동('진도관리' 캘린더를 따로 만들어 반별 수행평가 날짜 · 중요 일정). 콘솔에서 Calendar API 사용 설정 + 권한 추가가 필요.
 
 ## 작업할 때

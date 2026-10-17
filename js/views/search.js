@@ -40,7 +40,7 @@ export default function render(root) {
       h('div', { class: 'row' }, S.unitsOf(t).map((u) => {
         const n = S.data.lessons.filter((l) => l.unit_id === u.id).length;
         const m = S.data.materials.filter((x) => x.unit_id === u.id).length;
-        return h('button', { class: 'btn', onClick: () => pickUnit(u) }, u.name, h('span', { class: 'muted small' }, ` 기록 ${n} · 자료 ${m}`));
+        return h('button', { class: 'btn', onClick: () => pickUnit(u) }, u.subject && S.subjectsOfYear(t.year).length > 1 ? `${u.subject} · ${u.name}` : u.name, h('span', { class: 'muted small' }, ` 기록 ${n} · 자료 ${m}`));
       }))))];
   }
 
@@ -58,7 +58,7 @@ export default function render(root) {
     const notes = unit ? [] : S.data.class_notes.filter((n) => has(n.text));
 
     const out = [];
-    if (unit) out.push(h('div', { class: 'banner banner-info' }, `${S.termLabel(unit)} · ${unit.name} 단원`));
+    if (unit) out.push(h('div', { class: 'banner banner-info' }, `${S.termLabel(unit)}${unit.subject ? ` ${unit.subject}` : ''} · ${unit.name} 단원`));
     out.push(h('div', { class: 'section-title' }, `수업 기록 ${lessons.length}개`));
     if (lessons.length) {
       const groups = [];
@@ -71,7 +71,7 @@ export default function render(root) {
         h('h3', {}, S.termLabel(g.term)),
         g.list.map((l) => h('div', { class: 'found-row clickable', onClick: (e) => { if (!e.target.closest('a')) recordDialog(l); } },
           h('span', { class: 'nowrap small muted', style: { width: '64px' } }, fmtMD(l.date)),
-          classChip(S.classById(l.class_id)),
+          classChip(S.classById(l.class_id), S.classLabel(S.classById(l.class_id))),
           h('span', { class: 'grow' }, S.lessonText(l), l.unit_id ? h('span', { class: 'muted small' }, `  · ${unitName(l.unit_id)}`) : null),
           h('div', { class: 'mat-list' }, S.materialsOfLesson(l.id).map(matLink)))))));
     }
@@ -82,7 +82,7 @@ export default function render(root) {
         return h('div', { class: 'found-row clickable', onClick: () => openMaterial(m) },
           h('span', { class: 'grow' }, `${m.kind === 'link' ? '🔗' : '📄'} ${m.name}`),
           h('span', { class: 'muted small' }, materialPlace(m)),
-          h('span', { class: 'muted small' }, used.length ? `${used.map((l) => `${fmtMD(l.date)} ${S.classById(l.class_id)?.name || ''}`).slice(-3).join(', ')}${used.length > 3 ? ' …' : ''}` : '아직 안 씀'));
+          h('span', { class: 'muted small' }, used.length ? `${used.map((l) => `${fmtMD(l.date)} ${S.classLabel(S.classById(l.class_id))}`).slice(-3).join(', ')}${used.length > 3 ? ' …' : ''}` : '아직 안 씀'));
       })));
     }
     if (notes.length) {
@@ -90,7 +90,7 @@ export default function render(root) {
         h('div', { class: 'card' }, notes.map((n) => {
           const cls = S.classById(n.class_id);
           return h('div', { class: 'found-row clickable', onClick: () => cls && noteDialog(cls, n) },
-            classChip(cls), h('span', { class: `grow ${n.done ? 'muted' : ''}` }, n.text, n.done ? ' (끝냄)' : ''));
+            classChip(cls, S.classLabel(cls)), h('span', { class: `grow ${n.done ? 'muted' : ''}` }, n.text, n.done ? ' (끝냄)' : ''));
         })));
     }
     return out;

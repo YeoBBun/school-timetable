@@ -289,3 +289,9 @@ label.inline { flex-direction: row; align-items: center; gap: 6px; color: var(--
 .rec-table td { vertical-align: top; }
 .mat-list { display: flex; flex-wrap: wrap; gap: 4px; }
 .mat-chip { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; }
+.class-row { padding: 6px 0; border-bottom: 1px solid var(--border); gap: 6px; }
+.class-row select { padding: 5px 6px; }
+.col-head .chip { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.col-head .badge { white-space: nowrap; flex-shrink: 0; }
+.class-row { flex-wrap: nowrap; }
+.col-name { min-width: 0; display: flex; }

@@ -22,10 +22,10 @@ export function recordDialog(l) {
   const period = h('input', { type: 'number', min: 1, max: 12, value: l.period ?? '', placeholder: '없음', style: { width: '90px' } });
   const text = h('input', { type: 'text', value: S.lessonText(l) });
   const unitBox = h('span', {});
-  const drawUnit = () => unitBox.replaceChildren(unitSelect(term, st.unitId, (v) => { st.unitId = v; drawUnit(); }));
+  const drawUnit = () => unitBox.replaceChildren(unitSelect(term, cls?.subject, st.unitId, (v) => { st.unitId = v; drawUnit(); }));
   drawUnit();
   const mats = S.materialsOfLesson(l.id);
-  const m = modal(`${cls?.name || ''} 수업 기록`, [
+  const m = modal(`${S.classLabel(cls)} 수업 기록`, [
     h('label', {}, '한 일', text),
     h('div', { class: 'row' }, h('label', {}, '날짜', date), h('label', {}, '교시', period), h('label', {}, '단원', unitBox)),
     h('div', { class: 'section-title', style: { margin: '4px 0 0' } }, '붙인 자료'),
@@ -66,7 +66,7 @@ export function copyDialog(l) {
   const withMats = h('input', { type: 'checkbox', checked: true });
   modal(`'${S.lessonText(l)}' 다른 반에도 쓰기`, [
     h('div', { class: 'row' }, others.map((c) => h('label', { class: 'inline check-chip' },
-      h('input', { type: 'checkbox', onChange: (e) => (e.target.checked ? picked.add(c.id) : picked.delete(c.id)) }), c.name))),
+      h('input', { type: 'checkbox', onChange: (e) => (e.target.checked ? picked.add(c.id) : picked.delete(c.id)) }), S.classLabel(c)))),
     h('label', {}, '날짜', date),
     mats.length ? h('label', { class: 'inline' }, withMats, `붙인 자료 ${mats.length}개도 함께`) : null,
   ], [
@@ -91,7 +91,7 @@ export function copyDialog(l) {
 // 반 메모 (예: 활동지 아직 안 걷음). 체크하면 끝난 메모로 넘어간다
 export function noteDialog(cls, note = null) {
   const text = h('input', { type: 'text', value: note?.text || '', placeholder: '예: 활동지 아직 안 걷음, 다음 시간 발표부터' });
-  modal(`${cls.name} 반 메모`, [h('label', {}, '메모', text)], [
+  modal(`${S.classLabel(cls)} 반 메모`, [h('label', {}, '메모', text)], [
     note ? { label: '삭제', danger: true, onClick: () => S.remove('class_notes', { id: note.id }) } : null,
     { label: '취소' },
     {

@@ -14,7 +14,7 @@ const CACHE_KEY = 'jindo.cache';
 const CACHE_MAX_AGE = 60 * 24 * 3600 * 1000; // 지운 기록(90일)보다 짧게: 오래된 사본이 지운 항목을 되살리지 않도록
 
 // 기본키가 id 가 아닌 테이블
-// folders: 드라이브 폴더 위치 (key 예: 'y:2026', 's:2026:2', 'u:<단원 id>', 'p:<단원 id>:lesson')
+// folders: 드라이브 폴더 위치 (key 예: 'y:2026', 's:2026:2', 'j:2026:2:국어', 'u:<단원 id>', 'p:<단원 id>:lesson')
 const KEYS = { item_materials: ['item_id', 'material_id'], lesson_materials: ['lesson_id', 'material_id'], settings: ['user_id'], folders: ['key'] };
 const DEFAULTS = {
   classes: { color: '#4f7cff', sort: 0 },
@@ -126,6 +126,7 @@ export function loadAll() {
       remoteVersion = created.version;
     }
     loaded = true;
+    migrate();
     writeCache();
     emit(true);
     if (dirty) await save(); // 사본에 밀린 수정이 있으면 이어서 저장
@@ -393,10 +394,36 @@ export const classById = (id) => data.classes.find((c) => c.id === id);
 export const itemById = (id) => data.curriculum_items.find((i) => i.id === id);
 export const materialById = (id) => data.materials.find((m) => m.id === id);
 
+// 과목 → 학년 → 반 순 (같은 과목 반끼리 나란히 놓여 진도를 비교하기 쉽다)
 export function sortedClasses(subject) {
   return data.classes
     .filter((c) => !subject || c.subject === subject)
-    .sort((a, b) => a.sort - b.sort || koSort(a.subject, b.subject) || koSort(a.name, b.name));
+    .sort((a, b) => koSort(a.subject || '', b.subject || '') || (a.grade ?? 99) - (b.grade ?? 99)
+      || (a.room ?? 99) - (b.room ?? 99) || a.sort - b.sort || koSort(a.name, b.name));
+}
+
+// '1학년 1반' (그 학년도에 과목이 여러 개면 '1학년 1반 독서'처럼 과목을 붙인다)
+export function classLabel(c) {
+  if (!c) return '(삭제된 반)';
+  const base = c.grade ? `${c.grade}학년 ${c.room}반` : c.name;
+  return subjectsOfYear(classYear(c)).length > 1 && c.subject ? `${base} ${c.subject}` : base;
+}
+export function subjectsOfYear(year) {
+  return [...new Set(data.classes.filter((c) => classYear(c) === year).map((c) => c.subject).filter(Boolean))].sort(koSort);
+}
+
+// 예전 '101반' 같은 이름을 학년 · 반 숫자로 나눈다 (드라이브를 읽은 뒤 한 번)
+function migrate() {
+  const stamp = now();
+  let changed = false;
+  for (const c of data.classes) {
+    if (c.grade != null) continue;
+    const m = /^(\d)(\d{2})반?$/.exec((c.name || '').trim()) || /^(\d)\s*-\s*(\d{1,2})$/.exec((c.name || '').trim());
+    if (!m) continue;
+    Object.assign(c, { grade: Number(m[1]), room: Number(m[2]), name: `${Number(m[1])}학년 ${Number(m[2])}반`, _u: stamp });
+    changed = true;
+  }
+  if (changed) scheduleSave();
 }
 
 export function subjects() {
@@ -445,12 +472,14 @@ export function classesOfYear(year) {
 
 // ---- 단원 (학년도 · 학기마다) ----
 export const unitById = (id) => data.units.find((u) => u.id === id);
-export function unitsOf(term) {
-  return data.units.filter((u) => sameTerm(u, term)).sort((a, b) => a.sort - b.sort || koSort(a.name, b.name));
+// 단원은 학기 + 과목마다 (과목이 비어 있으면 모든 과목에 보인다)
+export function unitsOf(term, subject) {
+  return data.units.filter((u) => sameTerm(u, term) && (!subject || !u.subject || u.subject === subject))
+    .sort((a, b) => a.sort - b.sort || koSort(a.name, b.name));
 }
-export async function addUnit(term, name) {
-  const sort = unitsOf(term).reduce((m, u) => Math.max(m, u.sort), 0) + 10;
-  return insert('units', { year: term.year, semester: term.semester, name, sort });
+export async function addUnit(term, subject, name) {
+  const sort = unitsOf(term, subject).reduce((m, u) => Math.max(m, u.sort), 0) + 10;
+  return insert('units', { year: term.year, semester: term.semester, subject: subject || null, name, sort });
 }
 // 단원 이름을 바꾸면 드라이브 폴더 이름도 바꾼다
 export async function renameUnit(unit, name) {
@@ -477,7 +506,7 @@ export function lessonsOfMaterial(materialId) {
   return data.lessons.filter((l) => ids.has(l.id)).sort(lessonOrder);
 }
 
-// ---- 자료 폴더: 수업 자료/2026학년도/2학기/단원/수업|평가 ----
+// ---- 자료 폴더: 수업 자료/2026학년도/2학기/과목/단원/수업|평가 ----
 async function folderFor(key, name, parentId) {
   const found = data.folders.find((f) => f.key === key);
   if (found) return found.folder_id;
@@ -497,12 +526,14 @@ export async function materialFolder(where) {
   await db.from('folders').delete().in('key', data.folders.map((f) => f.key));
   return findMaterialFolder(where);
 }
-async function findMaterialFolder({ year, semester, unitId, purpose }) {
+async function findMaterialFolder({ year, semester, subject, unitId, purpose }) {
   const y = await folderFor(`y:${year}`, `${year}학년도`, drive.materialsId);
   const s = await folderFor(`s:${year}:${semester}`, `${semester}학기`, y);
   const unit = unitId && unitById(unitId);
-  if (!unit) return s;
-  const u = await folderFor(`u:${unit.id}`, unit.name, s);
+  const subj = unit?.subject || subject;
+  const j = subj ? await folderFor(`j:${year}:${semester}:${subj}`, subj, s) : s;
+  if (!unit) return j;
+  const u = await folderFor(`u:${unit.id}`, unit.name, j);
   return folderFor(`p:${unit.id}:${purpose}`, purpose === 'eval' ? '평가' : '수업', u);
 }
 

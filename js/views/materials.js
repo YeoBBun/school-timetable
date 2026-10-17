@@ -5,7 +5,7 @@ import * as S from '../store.js';
 
 const PURPOSE = { lesson: '수업', eval: '평가' };
 // 자료 화면 상태
-const view = { term: null, unitId: '', purpose: 'lesson', q: '' };
+const view = { term: null, subject: '', unitId: '', purpose: 'lesson', q: '' };
 
 // ---- 공용 함수 (다른 화면에서도 사용) ----
 
@@ -16,13 +16,13 @@ export function materialTerm(m) {
 
 export function materialPlace(m) {
   const unit = S.unitById(m.unit_id);
-  return [S.termLabel(materialTerm(m)), unit?.name, unit ? PURPOSE[m.purpose] || '수업' : null].filter(Boolean).join(' · ');
+  return [S.termLabel(materialTerm(m)), m.subject, unit?.name, unit ? PURPOSE[m.purpose] || '수업' : null].filter(Boolean).join(' · ');
 }
 
-export async function uploadFiles(files, { term, unitId = null, purpose = 'lesson' }) {
+export async function uploadFiles(files, { term, subject = null, unitId = null, purpose = 'lesson' }) {
   const list = [...files];
   if (!list.length) return [];
-  const folder = await S.materialFolder({ ...term, unitId, purpose });
+  const folder = await S.materialFolder({ ...term, subject, unitId, purpose });
   const created = [];
   for (let i = 0; i < list.length; i++) {
     const f = list[i];
@@ -32,7 +32,7 @@ export async function uploadFiles(files, { term, unitId = null, purpose = 'lesso
       const up = await G.uploadFile(f, folder, (p) => { t.textContent = `${label()} · ${Math.round(p * 100)}%`; });
       created.push(await S.insert('materials', {
         name: f.name, kind: 'file', drive_id: up.id, url: up.webViewLink || G.fileViewUrl(up.id), size: f.size, mime: f.type || null,
-        year: term.year, semester: term.semester, unit_id: unitId || null, purpose, folder_id: folder,
+        year: term.year, semester: term.semester, subject: subject || null, unit_id: unitId || null, purpose, folder_id: folder,
       }));
     } catch (err) {
       showError(new Error(`${f.name}: ${err.message}`));
@@ -62,27 +62,27 @@ function normalizeUrl(v) {
 }
 
 // 단원 고르기 (맨 아래 '+ 새 단원'을 고르면 바로 만든다)
-export function unitSelect(term, value, onChange, { emptyLabel = '— 단원 없음 —' } = {}) {
+export function unitSelect(term, subject, value, onChange, { emptyLabel = '— 단원 없음 —' } = {}) {
   const sel = h('select', {
     class: 'unit-select', value: value || '',
     onChange: async () => {
       if (sel.value !== '__new') return onChange(sel.value);
       sel.value = value || '';
-      const unit = await newUnitDialog(term);
+      const unit = await newUnitDialog(term, subject);
       if (unit) onChange(unit.id);
     },
   },
   h('option', { value: '' }, emptyLabel),
-  S.unitsOf(term).map((u) => h('option', { value: u.id }, u.name)),
+  S.unitsOf(term, subject).map((u) => h('option', { value: u.id }, u.name)),
   h('option', { value: '__new' }, '+ 새 단원 만들기…'));
   return sel;
 }
 
-export function newUnitDialog(term) {
+export function newUnitDialog(term, subject) {
   return new Promise((resolve) => {
     let result = null;
     const name = h('input', { type: 'text', placeholder: '예: 1. 갈등과 소통' });
-    const m = modal(`${S.termLabel(term)} · 새 단원`, [
+    const m = modal(`${S.termLabel(term)}${subject ? ` ${subject}` : ''} · 새 단원`, [
       h('label', {}, '단원 이름', name),
       h('p', { class: 'muted small' }, '앞에 번호를 붙이면 순서대로 정렬됩니다. 드라이브에도 같은 이름의 폴더가 생깁니다.'),
     ], [
@@ -92,8 +92,8 @@ export function newUnitDialog(term) {
         onClick: async () => {
           const n = name.value.trim();
           if (!n) { toast('단원 이름을 입력하세요.'); return false; }
-          if (S.unitsOf(term).some((u) => u.name === n)) { toast('같은 이름의 단원이 이미 있습니다.', 'error'); return false; }
-          result = await S.addUnit(term, n);
+          if (S.unitsOf(term, subject).some((u) => u.name === n)) { toast('같은 이름의 단원이 이미 있습니다.', 'error'); return false; }
+          result = await S.addUnit(term, subject, n);
         },
       },
     ]);
@@ -119,7 +119,7 @@ function fileInput(onFiles, text = '여기로 파일을 끌어다 놓거나 클�
   return zone;
 }
 
-export function linkDialog({ term, unitId = null, purpose = 'lesson' }) {
+export function linkDialog({ term, subject = null, unitId = null, purpose = 'lesson' }) {
   return new Promise((resolve) => {
     const url = h('input', { type: 'url', placeholder: 'https://…' });
     const name = h('input', { type: 'text', placeholder: '이름 (예: 수업 영상, 패들렛)' });
@@ -131,7 +131,7 @@ export function linkDialog({ term, unitId = null, purpose = 'lesson' }) {
         onClick: async () => {
           const u = normalizeUrl(url.value);
           if (!u) return false;
-          result = await S.insert('materials', { name: name.value.trim() || u, kind: 'link', url: u, year: term.year, semester: term.semester, unit_id: unitId || null, purpose });
+          result = await S.insert('materials', { name: name.value.trim() || u, kind: 'link', url: u, year: term.year, semester: term.semester, subject: subject || null, unit_id: unitId || null, purpose });
         },
       },
     ]);
@@ -149,6 +149,7 @@ async function linkLesson(lesson, ids) {
 // files 가 있으면(기록에 끌어다 놓은 경우) 올릴 위치만 확인하고 바로 올린다
 export function attachDialog(lesson, files = null) {
   const term = S.termOf(lesson.date);
+  const subject = S.classById(lesson.class_id)?.subject || null;
   const st = { unitId: lesson.unit_id || '', purpose: 'lesson', all: false };
   const already = new Set(S.materialsOfLesson(lesson.id).map((m) => m.id));
   const chosen = new Set();
@@ -158,14 +159,14 @@ export function attachDialog(lesson, files = null) {
 
   const drawPlace = () => place.replaceChildren(
     h('span', { class: 'muted small' }, '올릴 곳'),
-    unitSelect(term, st.unitId, (v) => { st.unitId = v; drawPlace(); drawList(); }),
+    unitSelect(term, subject, st.unitId, (v) => { st.unitId = v; drawPlace(); drawList(); }),
     purposeToggle(st.purpose, (v) => { st.purpose = v; drawPlace(); }));
 
   const drawList = () => {
     const q = search.value.trim().toLowerCase();
     const rows = S.data.materials
       .filter((m) => !already.has(m.id))
-      .filter((m) => st.all || !st.unitId || m.unit_id === st.unitId)
+      .filter((m) => st.all || (!subject || !m.subject || m.subject === subject) && (!st.unitId || m.unit_id === st.unitId))
       .filter((m) => !q || m.name.toLowerCase().includes(q))
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
     listBox.replaceChildren(...(rows.length
@@ -184,7 +185,7 @@ export function attachDialog(lesson, files = null) {
     toast(`자료 ${ids.length}개를 붙였습니다.`, 'ok');
   };
   const upload = async (fs) => {
-    const created = await uploadFiles(fs, { term, unitId: st.unitId || null, purpose: st.purpose });
+    const created = await uploadFiles(fs, { term, subject, unitId: st.unitId || null, purpose: st.purpose });
     await finish(created.map((m) => m.id));
   };
 
@@ -193,7 +194,7 @@ export function attachDialog(lesson, files = null) {
     modal('자료 올리기', [
       h('div', {}, [...files].map((f) => h('div', {}, `📄 ${f.name}`, h('span', { class: 'muted small' }, ` · ${fmtSize(f.size)}`)))),
       place,
-      h('p', { class: 'muted small' }, `드라이브의 '수업 자료/${term.year}학년도/${term.semester}학기/단원/수업·평가' 폴더에 들어갑니다.`),
+      h('p', { class: 'muted small' }, `드라이브의 '수업 자료/${term.year}학년도/${term.semester}학기/${subject ? `${subject}/` : ''}단원/수업·평가' 폴더에 들어갑니다.`),
     ], [
       { label: '취소' },
       { label: '올리고 붙이기', primary: true, onClick: async (close) => { close(); await upload(files); } },
@@ -203,13 +204,13 @@ export function attachDialog(lesson, files = null) {
 
   let m;
   const allBox = h('label', { class: 'inline' },
-    h('input', { type: 'checkbox', onChange: (e) => { st.all = e.target.checked; drawList(); } }), '다른 단원 자료도 보기');
+    h('input', { type: 'checkbox', onChange: (e) => { st.all = e.target.checked; drawList(); } }), '다른 단원 · 과목 자료도 보기');
   m = modal('자료 붙이기', [
     place,
     fileInput(async (fs) => { m.close(); await upload(fs); }),
     h('button', {
       class: 'btn', style: { alignSelf: 'flex-start' },
-      onClick: async () => { const r = await linkDialog({ term, unitId: st.unitId, purpose: st.purpose }); if (r) { m.close(); await finish([r.id]); } },
+      onClick: async () => { const r = await linkDialog({ term, subject, unitId: st.unitId, purpose: st.purpose }); if (r) { m.close(); await finish([r.id]); } },
     }, '🔗 링크로 붙이기'),
     h('div', { class: 'section-title', style: { marginBottom: 0 } }, '이미 올린 자료에서 고르기'),
     h('div', { class: 'row' }, search, allBox),
@@ -240,13 +241,13 @@ function editDialog(m) {
   const url = m.kind === 'link' ? h('input', { type: 'url', value: m.url }) : null;
   const place = h('div', { class: 'row' });
   const drawPlace = () => place.replaceChildren(
-    unitSelect(term, st.unitId, (v) => { st.unitId = v; drawPlace(); }),
+    unitSelect(term, m.subject, st.unitId, (v) => { st.unitId = v; drawPlace(); }),
     purposeToggle(st.purpose, (v) => { st.purpose = v; drawPlace(); }));
   drawPlace();
   modal('자료 수정', [
     h('label', {}, '이름', name),
     url ? h('label', {}, '주소', url) : null,
-    h('div', { class: 'muted small' }, `${S.termLabel(term)} 자료`),
+    h('div', { class: 'muted small' }, `${S.termLabel(term)}${m.subject ? ` ${m.subject}` : ''} 자료`),
     place,
   ], [
     { label: '취소' },
@@ -261,7 +262,7 @@ function editDialog(m) {
         if (m.kind === 'file' && m.drive_id) {
           if (patch.name !== m.name) await G.renameFile(m.drive_id, patch.name);
           if (patch.unit_id !== (m.unit_id || null) || patch.purpose !== (m.purpose || 'lesson')) {
-            const folder = await S.materialFolder({ ...term, unitId: patch.unit_id, purpose: patch.purpose });
+            const folder = await S.materialFolder({ ...term, subject: m.subject, unitId: patch.unit_id, purpose: patch.purpose });
             await G.moveFile(m.drive_id, folder, m.folder_id || S.drive.materialsId);
             patch.folder_id = folder;
           }
@@ -306,10 +307,21 @@ function knownTerms() {
   return [...map.values()].sort((a, b) => b.year - a.year || b.semester - a.semester);
 }
 
+// 그 학기에 쓰는 과목들 (담당 반 + 단원 + 자료)
+function termSubjects(term) {
+  const set = new Set(S.subjectsOfYear(term.year));
+  S.data.units.filter((u) => S.sameTerm(u, term) && u.subject).forEach((u) => set.add(u.subject));
+  S.data.materials.filter((m) => m.subject && S.sameTerm(materialTerm(m), term)).forEach((m) => set.add(m.subject));
+  return [...set].sort((a, b) => a.localeCompare(b, 'ko'));
+}
+
 export default function render(root) {
   const terms = knownTerms();
   if (!view.term || !terms.some((t) => S.sameTerm(t, view.term))) view.term = terms[0];
   const term = view.term;
+  const subjects = termSubjects(term);
+  if (!subjects.includes(view.subject)) { view.subject = subjects[0] || ''; view.unitId = ''; }
+  const subject = view.subject || null;
   if (view.unitId && !S.unitById(view.unitId)) view.unitId = '';
   const rerender = () => { root.replaceChildren(); render(root); };
 
@@ -317,38 +329,43 @@ export default function render(root) {
     value: `${term.year}-${term.semester}`,
     onChange: (e) => { const [y, s] = e.target.value.split('-').map(Number); view.term = { year: y, semester: s }; view.unitId = ''; rerender(); },
   }, terms.map((t) => h('option', { value: `${t.year}-${t.semester}` }, S.termLabel(t))));
+  const subjectTabs = subjects.length > 1
+    ? h('div', { class: 'seg' }, subjects.map((sj) => h('button', { class: sj === subject ? 'active' : '', onClick: () => { view.subject = sj; view.unitId = ''; rerender(); } }, sj)))
+    : null;
 
+  const where = [`${term.year}학년도`, `${term.semester}학기`, subject, S.unitById(view.unitId)?.name || '(단원 없음)', view.unitId ? PURPOSE[view.purpose] : null].filter(Boolean).join('/');
   const upload = h('div', { class: 'card' },
     h('h3', {}, '자료 올리기'),
     h('div', { class: 'row', style: { marginBottom: '10px' } },
-      unitSelect(term, view.unitId, (v) => { view.unitId = v; rerender(); }),
+      unitSelect(term, subject, view.unitId, (v) => { view.unitId = v; rerender(); }),
       purposeToggle(view.purpose, (v) => { view.purpose = v; rerender(); }),
       h('span', { class: 'grow' }),
-      h('button', { class: 'btn', onClick: () => linkDialog({ term, unitId: view.unitId, purpose: view.purpose }) }, '🔗 링크 추가')),
-    fileInput((files) => uploadFiles(files, { term, unitId: view.unitId || null, purpose: view.purpose }).catch(showError),
-      `여기로 파일을 끌어다 놓거나 클릭해서 고르기 → ${term.year}학년도/${term.semester}학기/${S.unitById(view.unitId)?.name || '(단원 없음)'}${view.unitId ? `/${PURPOSE[view.purpose]}` : ''}`));
+      h('button', { class: 'btn', onClick: () => linkDialog({ term, subject, unitId: view.unitId, purpose: view.purpose }) }, '🔗 링크 추가')),
+    fileInput((files) => uploadFiles(files, { term, subject, unitId: view.unitId || null, purpose: view.purpose }).catch(showError),
+      `여기로 파일을 끌어다 놓거나 클릭해서 고르기 → ${where}`));
 
   const listBox = h('div', {});
   const drawList = () => {
     const q = view.q.trim().toLowerCase();
     const inTerm = S.data.materials.filter((m) => S.sameTerm(materialTerm(m), term))
+      .filter((m) => !subject || !m.subject || m.subject === subject)
       .filter((m) => !q || m.name.toLowerCase().includes(q))
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
-    const units = S.unitsOf(term);
+    const units = S.unitsOf(term, subject);
     const groups = [...units.map((u) => ({ unit: u, list: inTerm.filter((m) => m.unit_id === u.id) })),
       { unit: null, list: inTerm.filter((m) => !m.unit_id || !S.unitById(m.unit_id)) }];
     listBox.replaceChildren(...groups.filter((g) => g.unit || g.list.length).map((g) => unitBlock(g.unit, g.list)),
-      h('button', { class: 'btn', onClick: () => newUnitDialog(term) }, '+ 새 단원'));
+      h('button', { class: 'btn', onClick: () => newUnitDialog(term, subject) }, '+ 새 단원'));
   };
   const search = h('input', { type: 'search', placeholder: '자료 이름 검색', value: view.q, style: { width: '220px' }, onInput: (e) => { view.q = e.target.value; drawList(); } });
   drawList();
 
   append(root,
     h('div', { class: 'page-head' },
-      h('h2', {}, '수업 자료'), termSel, search,
+      h('h2', {}, '수업 자료'), termSel, subjectTabs, search,
       S.drive.materialsId ? h('a', { class: 'btn', href: G.folderUrl(S.drive.materialsId), target: '_blank', rel: 'noopener' }, '드라이브 폴더 열기') : null),
     upload,
-    h('div', { class: 'section-title' }, `${S.termLabel(term)} 단원별 자료`),
+    h('div', { class: 'section-title' }, `${S.termLabel(term)}${subject ? ` ${subject}` : ''} 단원별 자료`),
     listBox);
 }
 
@@ -371,8 +388,8 @@ function materialRow(m) {
   const used = S.lessonsOfMaterial(m.id);
   return h('div', { class: 'mat-row' },
     h('span', { class: 'file-name grow', onClick: () => openMaterial(m) }, `${m.kind === 'link' ? '🔗' : '📄'} ${m.name}`),
-    h('span', { class: 'muted small', title: used.map((l) => `${fmtMD(l.date)} ${S.classById(l.class_id)?.name || ''}`).join('\n') },
-      used.length ? `쓴 수업 ${used.length}회 · ${[...new Set(used.map((l) => S.classById(l.class_id)?.name).filter(Boolean))].join(', ')}` : '아직 안 씀'),
+    h('span', { class: 'muted small', title: used.map((l) => `${fmtMD(l.date)} ${S.classLabel(S.classById(l.class_id))}`).join('\n') },
+      used.length ? `쓴 수업 ${used.length}회 · ${[...new Set(used.map((l) => S.classLabel(S.classById(l.class_id))))].join(', ')}` : '아직 안 씀'),
     h('span', { class: 'muted small', style: { width: '64px', textAlign: 'right' } }, m.kind === 'file' ? fmtSize(m.size) : '링크'),
     m.kind === 'file' ? h('button', { class: 'icon-btn', title: '내려받기', onClick: () => openMaterial(m, true) }, '⬇') : null,
     h('button', { class: 'icon-btn', title: '수정', onClick: () => editDialog(m) }, '✎'),

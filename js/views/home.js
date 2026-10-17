@@ -59,7 +59,7 @@ function timetableBar(slots, off, isToday, classes) {
       },
     },
     h('span', { class: 'slot-p' }, `${s.period}교시`),
-    h('strong', {}, cls.name),
+    h('strong', {}, S.classLabel(cls)),
     h('span', { class: 'slot-text' }, rec ? `✓ ${S.lessonText(rec)}` : (s.changed ? '변경' : '')));
   });
   return h('div', { class: 'tt-bar' },
@@ -123,11 +123,11 @@ function classColumn(cls, term, slots) {
 
   return h('div', { class: 'card class-col', style: { '--c': cls.color } },
     h('div', { class: 'col-head' },
-      h('a', { href: `#/class/${cls.id}`, class: 'col-name', title: '이 반 전체 기록 보기' }, classChip(cls)),
+      h('a', { href: `#/class/${cls.id}`, class: 'col-name', title: '이 반 전체 기록 보기' }, classChip(cls, S.classLabel(cls))),
       periods.length ? h('span', { class: 'badge badge-info' }, `${periods.join('·')}교시`) : null,
       h('span', { class: 'grow' }),
       h('button', { class: 'icon-btn', title: '반 메모 추가', onClick: () => noteDialog(cls) }, '📝')),
-    h('div', { class: 'col-unit' }, unitSelect(term, unitId, (v) => { unitPick.set(key, v); go('today'); }, { emptyLabel: '— 단원 고르기 —' })),
+    h('div', { class: 'col-unit' }, unitSelect(term, cls.subject, unitId, (v) => { unitPick.set(key, v); go('today'); }, { emptyLabel: '— 단원 고르기 —' })),
     input,
     notes.length ? h('div', { class: 'notes' }, notes.map((n) => noteItem(n, cls))) : null,
     recRows.length ? h('div', { class: 'recs' }, recRows) : h('p', { class: 'muted small', style: { margin: '6px 2px' } }, '아직 기록이 없습니다.'),
@@ -142,7 +142,7 @@ function changeDialog(d) {
   const base = new Map(S.data.timetable_slots.filter((s) => s.weekday === wd).map((s) => [s.period, s.class_id]));
   const existing = new Map(S.data.timetable_changes.filter((c) => c.date === d).map((c) => [c.period, c]));
   const maxPeriod = Math.max(st.periods, ...existing.keys(), ...base.keys());
-  const label = (id) => S.classById(id)?.name || '';
+  const label = (id) => S.classLabel(S.classById(id));
 
   const rows = [];
   for (let p = 1; p <= maxPeriod; p++) {
@@ -151,7 +151,7 @@ function changeDialog(d) {
     const select = h('select', { value },
       h('option', { value: 'base' }, base.get(p) ? `주간 시간표대로 (${label(base.get(p))})` : '주간 시간표대로 (수업 없음)'),
       base.get(p) ? h('option', { value: 'none' }, '수업 없음 (결강 · 교체로 빠짐)') : null,
-      classes.map((c) => h('option', { value: c.id }, `${c.name}${c.id === base.get(p) ? '' : ' 로 바꾸기'}`)));
+      classes.map((c) => h('option', { value: c.id }, `${S.classLabel(c)}${c.id === base.get(p) ? '' : ' 로 바꾸기'}`)));
     const note = h('input', { type: 'text', placeholder: '사유 (예: 교체, 보강, 행사)', value: ch?.note || '', style: { flex: 1 } });
     const row = h('div', { class: 'change-row' }, h('strong', { class: 'period-lbl' }, `${p}교시`), select, note);
     const mark = () => row.classList.toggle('changed', select.value !== 'base');
