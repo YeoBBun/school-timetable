@@ -21,7 +21,8 @@ js/app.js           로그인 화면, 메뉴, 화면 전환(hash 라우팅), 동
 js/ui.js            h() DOM 도우미, modal, toast, 날짜 함수
 js/views/home.js    첫 화면: 오늘 시간표 + 담당 반 칸(단원 고르기, 한 줄 기록, 반 메모, 최근 기록)
 js/views/records.js 기록 수정 · 다른 반에도 쓰기 · 반 메모 창 (공용)
-js/views/classpage.js  #/class/<반id>/<탭> 반 화면 탭: records · students · assess · groups · stickers
+js/views/classpage.js  #/class/<반id>/<탭> 반 화면 탭: records · students · assess · groups · stickers · seteuk
+js/views/seteuk.js  과세특: 학생 한 명의 메모 · 수행평가 · 스티커 · 조 활동 · 이 반 수업을 모아 보고 초안 쓰기(seteuk 테이블), 초안 엑셀
 js/views/students.js  학생 명단(직접 · 붙여넣기 · 나이스 엑셀 · 예시 학생), 학생 메모
 js/views/assess.js  수행평가 메뉴 + 반 탭, 점수 표(Enter 로 다음 학생), 엑셀 내려받기
 js/views/groups.js  조 편성(makeGroups: 무작위 시작 + 자리 바꾸기 탐색, 비용 = 규칙 · 조 크기 · 성별 · 지난 조 겹침)
@@ -42,6 +43,7 @@ serve.py            캐시 끈 로컬 서버 → http://localhost:5500
 - **학생**: year · grade · room · number · name · gender('M'|'F'|'') · sample(예시 학생). 반-과목이 아니라 학년도+학년+반 단위라 국어 · 독서 반이 같은 명단을 씀(`studentsOf(cls)`). 나이스 명렬표는 `parseRoster()` 가 '번호' + '성명/이름' 칸이 있는 줄을 제목 줄로 보고 읽음(학년 · 반 칸이 있으면 그 반만). **실제 나이스 파일로는 아직 확인 안 함.**
 - **수행평가**: assessments(year · semester · subject · grade · title · max_score · dates{반id: 날짜} · note), scores(assessment_id+student_id). 나이스 일괄 입력 양식 채우기는 사용자가 양식 견본을 주면 만들 것(지금은 학년 · 반 · 번호 · 이름 · 점수 xlsx).
 - **조 편성**: groupings(class_id · name · date · groups[[학생id]] · leaders{조번호: 학생id}), group_rules(학년도+학년+반, a<b, type together|apart). 저장 전 결과는 groups.js 의 states(메모리)에만 있음.
+- **과세특 초안**: seteuk(student_id · year · subject · text). 칸을 벗어날 때(change) 저장, 저장 전 글은 seteuk.js 의 drafts. 글자 수와 나이스 방식 바이트(한글 3, 영문 · 숫자 · 공백 1, 줄바꿈 2)를 보여 줌(한도는 강제하지 않음).
 - **반 메모 · 학생 메모 날짜**: class_notes.date · student_notes.date ('YYYY-MM-DD', 기본 오늘). 예전 반 메모는 `noteDate()` 가 created_at 을 로컬 날짜로 바꿔 씀. 학생 표의 메모 칸에 '📝 메모 쓰기' 버튼 + 최근 메모(날짜).
 - **칭찬 스티커**: stickers(class_id · student_id · date · reason · n). 학기마다 셈. 이유 버튼은 settings.sticker_reasons.
 - **일정**: events(date · title · class_id · note) + 수행평가 날짜 → `S.agenda(from, to)`. 구글 캘린더는 scope `calendar.app.created`(앱이 만든 캘린더만), settings.gcal_id. 사용자가 콘솔에서 Calendar API 사용 + 범위 추가를 해야 함(아직 안 함).

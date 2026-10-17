@@ -1,4 +1,4 @@
-// 반 화면: 탭으로 기록 · 학생 · 수행평가 · 조 편성 · 칭찬 스티커
+// 반 화면: 탭으로 기록 · 학생 · 수행평가 · 조 편성 · 칭찬 스티커 · 과세특
 import { h, append, fmtMD, todayStr, classChip, downloadText } from '../ui.js';
 import * as S from '../store.js';
 import { matLink } from './materials.js';
@@ -7,6 +7,7 @@ import { renderStudentsTab } from './students.js';
 import { renderClassAssess } from './assess.js';
 import { renderGroupsTab } from './groups.js';
 import { renderStickersTab } from './stickers.js';
+import { renderSeteukTab } from './seteuk.js';
 
 const TABS = [
   { key: 'records', label: '수업 기록', view: renderRecords },
@@ -14,6 +15,7 @@ const TABS = [
   { key: 'assess', label: '수행평가', view: renderClassAssess },
   { key: 'groups', label: '조 편성', view: renderGroupsTab },
   { key: 'stickers', label: '칭찬 스티커', view: renderStickersTab },
+  { key: 'seteuk', label: '과세특', view: renderSeteukTab },
 ];
 
 export default function render(root, id, sub) {

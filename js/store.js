@@ -7,7 +7,7 @@ import * as G from './google.js';
 // curriculum_items · item_materials 는 예전 버전(차시 목록) 데이터를 보존하려고 남겨 둔다
 export const TABLES = ['classes', 'curriculum_items', 'timetable_slots', 'timetable_changes', 'lessons', 'materials', 'item_materials', 'lesson_materials', 'days_off', 'settings',
   'units', 'class_notes', 'folders',
-  'students', 'student_notes', 'assessments', 'scores', 'groupings', 'group_rules', 'stickers', 'events', 'gcal_map'];
+  'students', 'student_notes', 'assessments', 'scores', 'groupings', 'group_rules', 'stickers', 'events', 'gcal_map', 'seteuk'];
 const DATA_FILE = '진도관리-데이터.json';
 const POLL_MS = 30_000;
 const TOMB_KEEP_MS = 90 * 24 * 3600 * 1000;
@@ -16,7 +16,7 @@ const CACHE_MAX_AGE = 60 * 24 * 3600 * 1000; // 지운 기록(90일)보다 짧�
 
 // 기본키가 id 가 아닌 테이블
 // folders: 드라이브 폴더 위치 (key 예: 'y:2026', 's:2026:2', 'j:2026:2:국어', 'u:<단원 id>', 'p:<단원 id>:lesson')
-const KEYS = { item_materials: ['item_id', 'material_id'], lesson_materials: ['lesson_id', 'material_id'], settings: ['user_id'], folders: ['key'], scores: ['assessment_id', 'student_id'], gcal_map: ['key'] };
+const KEYS = { item_materials: ['item_id', 'material_id'], lesson_materials: ['lesson_id', 'material_id'], settings: ['user_id'], folders: ['key'], scores: ['assessment_id', 'student_id'], gcal_map: ['key'], seteuk: ['student_id', 'year', 'subject'] };
 const DEFAULTS = {
   classes: { color: '#4f7cff', sort: 0 },
   curriculum_items: { unit: '', seq: 0 },
@@ -315,6 +315,7 @@ function cascadeDelete(table, row, stamp) {
     del('scores', (r) => r.student_id === row.id);
     del('stickers', (r) => r.student_id === row.id);
     del('group_rules', (r) => r.a === row.id || r.b === row.id);
+    del('seteuk', (r) => r.student_id === row.id);
   }
   if (table === 'assessments') del('scores', (r) => r.assessment_id === row.id);
   if (table === 'units') {
