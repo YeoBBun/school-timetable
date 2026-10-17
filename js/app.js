@@ -103,7 +103,11 @@ export function render({ remote = false } = {}) {
   else viewEl.scrollTop = 0;
   if (fk) {
     const el = viewEl.querySelector(`[data-fk="${CSS.escape(fk)}"]`);
-    if (el) { el.focus(); el.select?.(); }
+    if (el) {
+      el.focus();
+      if (el.tagName === 'TEXTAREA') el.setSelectionRange(el.value.length, el.value.length);
+      else el.select?.();
+    }
   }
 }
 

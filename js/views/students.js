@@ -2,6 +2,7 @@
 import { h, append, toast, showError, modal, confirmDialog, todayStr, fmtMD } from '../ui.js';
 import * as S from '../store.js';
 import { readRows } from '../xlsx.js';
+import { showStudent } from './seteuk.js';
 
 const GENDER = { M: '남', F: '여' };
 
@@ -30,7 +31,9 @@ export function renderStudentsTab(root, cls) {
       h('td', {}, h('div', { class: 'memo-cell' },
         h('button', { class: 'btn btn-sm', onClick: () => studentDialog(s, cls) }, notes.length ? `📝 메모 ${notes.length}` : '📝 메모 쓰기'),
         notes.length ? h('span', { class: 'small memo-last', onClick: () => studentDialog(s, cls) }, h('span', { class: 'muted' }, `${fmtMD(notes[0].date)} `), notes[0].text) : null)),
-      h('td', { class: 'right' }, h('button', { class: 'icon-btn danger', title: '학생 삭제', onClick: () => removeStudent(s) }, '✕')));
+      h('td', { class: 'right nowrap' },
+        h('button', { class: 'btn btn-sm', title: '메모 · 수행평가 · 스티커 · 과세특 초안을 한 화면에', onClick: () => showStudent(cls, s) }, '📋 종합'), ' ',
+        h('button', { class: 'icon-btn danger', title: '학생 삭제', onClick: () => removeStudent(s) }, '✕')));
   });
 
   append(root,
