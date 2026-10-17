@@ -4,7 +4,6 @@ import * as S from '../store.js';
 import { readRows } from '../xlsx.js';
 
 const GENDER = { M: '남', F: '여' };
-const LEVEL = { 3: '상', 2: '중', 1: '하' };
 
 const roomOf = (cls) => ({ year: S.classYear(cls), grade: cls.grade, room: cls.room });
 
@@ -27,8 +26,6 @@ export function renderStudentsTab(root, cls) {
         s.sample ? h('span', { class: 'badge', style: { marginLeft: '6px' } }, '예시') : null),
       h('td', {}, h('select', { value: s.gender || '', onChange: (e) => save(s, { gender: e.target.value }) },
         h('option', { value: '' }, '-'), Object.entries(GENDER).map(([k, v]) => h('option', { value: k }, v)))),
-      h('td', {}, h('select', { value: String(s.level || ''), onChange: (e) => save(s, { level: e.target.value ? Number(e.target.value) : '' }) },
-        h('option', { value: '' }, '-'), Object.entries(LEVEL).reverse().map(([k, v]) => h('option', { value: k }, v)))),
       h('td', { class: 'center' }, String(S.stickerCount(cls.id, s.id, term) || '')),
       h('td', { class: 'clickable small', onClick: () => studentDialog(s, cls) },
         notes.length ? [h('span', {}, notes[0].text), notes.length > 1 ? h('span', { class: 'muted' }, ` 외 ${notes.length - 1}개`) : null]
@@ -49,10 +46,10 @@ export function renderStudentsTab(root, cls) {
         : (list.length ? null : h('button', { class: 'btn', onClick: () => addSamples([cls]) }, '예시 학생 5명 넣기'))),
     list.length
       ? h('div', { class: 'table-wrap' }, h('table', { class: 'table student-table' },
-        h('thead', {}, h('tr', {}, ['번호', '이름', '성별', '수준', `스티커(${term.semester}학기)`, '메모', ''].map((t) => h('th', {}, t)))),
+        h('thead', {}, h('tr', {}, ['번호', '이름', '성별', `스티커(${term.semester}학기)`, '메모', ''].map((t) => h('th', {}, t)))),
         h('tbody', {}, rows)))
       : h('div', { class: 'empty' }, '아직 학생이 없습니다. 위 버튼으로 직접 넣거나, 나이스에서 내려받은 명렬표 엑셀을 올리세요.'),
-    h('p', { class: 'muted small' }, '성별 · 수준은 조 편성에서 고르게 나눌 때 씁니다(비워 둬도 됩니다). 명단은 학년도 · 학년 · 반마다 하나라서 같은 반의 다른 과목 수업과 함께 씁니다.'));
+    h('p', { class: 'muted small' }, '성별은 조 편성에서 고르게 나눌 때 씁니다(비워 둬도 됩니다). 명단은 학년도 · 학년 · 반마다 하나라서 같은 반의 다른 과목 수업과 함께 씁니다.'));
 }
 
 async function removeStudent(s) {
@@ -207,7 +204,7 @@ export async function addSamples(classes) {
     const start = (cls.grade * 7 + cls.room * 3) % GIVEN.length;
     const rows = Array.from({ length: 5 }, (_, i) => {
       const [given, gender] = GIVEN[(start + i * 3) % GIVEN.length];
-      return { ...roomOf(cls), number: i + 1, name: FAMILY[(cls.room * 2 + i) % FAMILY.length] + given, gender, level: (i % 3) + 1, sample: true };
+      return { ...roomOf(cls), number: i + 1, name: FAMILY[(cls.room * 2 + i) % FAMILY.length] + given, gender, sample: true };
     });
     await S.db.from('students').insert(rows);
     n += rows.length;

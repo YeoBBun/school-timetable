@@ -1,15 +1,15 @@
-// 조 편성: 조건(붙이기 · 떼어 놓기 · 성별 · 수준 · 지난 조와 덜 겹치기 · 결석)을 반영해 자동으로 짜고, 끌어다 옮기고, 저장 · TV 로 보기
+// 조 편성: 조건(붙이기 · 떼어 놓기 · 성별 · 지난 조와 덜 겹치기 · 결석)을 반영해 자동으로 짜고, 끌어다 옮기고, 저장 · TV 로 보기
 import { h, append, toast, showError, confirmDialog, todayStr, fmtMD, tvOverlay } from '../ui.js';
 import * as S from '../store.js';
 import { go } from '../app.js';
 
-const LEADER = { none: '안 정함', random: '무작위', level: '수준 높은 학생' };
+const LEADER = { none: '안 정함', random: '무작위' };
 // 반마다 화면 상태 (저장 전 결과 · 옵션)
 const states = new Map();
 function stateOf(cls) {
   if (!states.has(cls.id)) {
     states.set(cls.id, {
-      mode: 'count', count: 4, size: 4, gender: true, level: true, repeat: true, leader: 'none',
+      mode: 'count', count: 4, size: 4, gender: true, repeat: true, leader: 'none',
       absent: new Set(), draft: null, warnings: [], ruleA: '', ruleB: '', ruleType: 'apart',
     });
   }
@@ -43,8 +43,6 @@ export function makeGroups(students, opt, rules, history) {
     for (const grp of g.groups) for (const a of grp) for (const b of grp) if (a < b) pastPairs.set(`${a}|${b}`, (pastPairs.get(`${a}|${b}`) || 0) + 1);
   }
   const males = students.filter((s) => s.gender === 'M').length;
-  const leveled = students.filter((s) => s.level);
-  const avgLevel = leveled.length ? leveled.reduce((x, s) => x + Number(s.level), 0) / leveled.length : 0;
   const base = Math.floor(n / k);
   const extra = n % k;
 
@@ -61,10 +59,6 @@ export function makeGroups(students, opt, rules, history) {
       if (opt.gender) {
         const m = g.filter((id) => byId.get(id).gender === 'M').length;
         c += Math.abs(m - (g.length * males) / n) * 12;
-      }
-      if (opt.level && leveled.length) {
-        const lv = g.map((id) => Number(byId.get(id).level)).filter(Boolean);
-        if (lv.length) c += Math.abs(lv.reduce((x, y) => x + y, 0) / lv.length - avgLevel) * 15;
       }
       if (opt.repeat) for (const a of g) for (const b of g) if (a < b) c += (pastPairs.get(`${a}|${b}`) || 0) * 6;
     }
@@ -106,8 +100,7 @@ export function makeGroups(students, opt, rules, history) {
   const leaders = {};
   groups.forEach((g, i) => {
     if (!g.length || opt.leader === 'none') return;
-    const pool = opt.leader === 'level' ? (() => { const top = Math.max(...g.map((id) => Number(byId.get(id).level) || 0)); return g.filter((id) => (Number(byId.get(id).level) || 0) === top); })() : g;
-    leaders[i] = pool[Math.floor(Math.random() * pool.length)];
+    leaders[i] = g[Math.floor(Math.random() * g.length)];
   });
   const warnings = [];
   const label = (id) => byId.get(id)?.name;
@@ -155,7 +148,6 @@ function optionsCard(cls, st, students, run) {
       st.mode === 'count' ? [numInput('count'), h('span', { class: 'small' }, '개 조')] : [numInput('size'), h('span', { class: 'small' }, '명씩')]),
     h('div', { class: 'opt-list' },
       check('gender', '성별 고르게'),
-      check('level', '수준 고르게'),
       check('repeat', '지난 조와 덜 겹치게 (최근 3번)'),
       h('label', { class: 'inline' }, '조장',
         h('select', { value: st.leader, onChange: (e) => { st.leader = e.target.value; } }, Object.entries(LEADER).map(([k, v]) => h('option', { value: k }, v))))),
@@ -165,7 +157,7 @@ function optionsCard(cls, st, students, run) {
       onClick: () => { if (st.absent.has(s.id)) st.absent.delete(s.id); else st.absent.add(s.id); refresh(cls); },
     }, `${s.number} ${s.name}`))),
     h('button', { class: 'btn btn-primary btn-block', style: { marginTop: '12px' }, onClick: run }, st.draft ? '다시 짜기' : '조 짜기'),
-    h('p', { class: 'muted small', style: { margin: '8px 0 0' } }, '성별 · 수준은 학생 탭에서 넣습니다. 비어 있는 학생은 따지지 않습니다.'));
+    h('p', { class: 'muted small', style: { margin: '8px 0 0' } }, '성별은 학생 탭에서 넣습니다. 비어 있는 학생은 따지지 않습니다.'));
 }
 
 function rulesCard(cls, st, students) {
@@ -203,8 +195,7 @@ function rulesCard(cls, st, students) {
 function groupStats(ids, byId) {
   const m = ids.filter((id) => byId.get(id)?.gender === 'M').length;
   const f = ids.filter((id) => byId.get(id)?.gender === 'F').length;
-  const lv = ids.map((id) => Number(byId.get(id)?.level)).filter(Boolean);
-  return [m || f ? `남${m} 여${f}` : '', lv.length ? `수준 ${(lv.reduce((x, y) => x + y, 0) / lv.length).toFixed(1)}` : ''].filter(Boolean).join(' · ');
+  return m || f ? `남${m} 여${f}` : '';
 }
 
 function resultView(cls, st, byId) {

@@ -24,7 +24,7 @@ js/views/records.js 기록 수정 · 다른 반에도 쓰기 · 반 메모 창 (
 js/views/classpage.js  #/class/<반id>/<탭> 반 화면 탭: records · students · assess · groups · stickers
 js/views/students.js  학생 명단(직접 · 붙여넣기 · 나이스 엑셀 · 예시 학생), 학생 메모
 js/views/assess.js  수행평가 메뉴 + 반 탭, 점수 표(Enter 로 다음 학생), 엑셀 내려받기
-js/views/groups.js  조 편성(makeGroups: 무작위 시작 + 자리 바꾸기 탐색, 비용 = 규칙 · 조 크기 · 성별 · 수준 · 지난 조 겹침)
+js/views/groups.js  조 편성(makeGroups: 무작위 시작 + 자리 바꾸기 탐색, 비용 = 규칙 · 조 크기 · 성별 · 지난 조 겹침)
 js/views/stickers.js  칭찬 스티커 탭 + TV 보드(ui.tvOverlay)
 js/views/schedule.js  일정 메뉴, 구글 캘린더 연결 카드
 js/calendar.js      앱 → 구글 '진도관리' 캘린더 한 방향 동기화(gcal_map 테이블, 이 기기에서 바꾼 것만)
@@ -39,7 +39,7 @@ serve.py            캐시 끈 로컬 서버 → http://localhost:5500
 - 모든 테이블을 드라이브 `진도관리/진도관리-데이터.json` **한 파일**에 저장합니다. 수업 자료 파일은 `진도관리/수업 자료/` 폴더에 둡니다.
 - 테이블: classes, timetable_slots, timetable_changes, lessons, materials, lesson_materials, days_off, settings, units, class_notes, folders,
   students, student_notes, assessments, scores, groupings, group_rules, stickers, events, gcal_map
-- **학생**: year · grade · room · number · name · gender('M'|'F'|'') · level(1~3|'') · sample(예시 학생). 반-과목이 아니라 학년도+학년+반 단위라 국어 · 독서 반이 같은 명단을 씀(`studentsOf(cls)`). 나이스 명렬표는 `parseRoster()` 가 '번호' + '성명/이름' 칸이 있는 줄을 제목 줄로 보고 읽음(학년 · 반 칸이 있으면 그 반만). **실제 나이스 파일로는 아직 확인 안 함.**
+- **학생**: year · grade · room · number · name · gender('M'|'F'|'') · sample(예시 학생). 반-과목이 아니라 학년도+학년+반 단위라 국어 · 독서 반이 같은 명단을 씀(`studentsOf(cls)`). 나이스 명렬표는 `parseRoster()` 가 '번호' + '성명/이름' 칸이 있는 줄을 제목 줄로 보고 읽음(학년 · 반 칸이 있으면 그 반만). **실제 나이스 파일로는 아직 확인 안 함.**
 - **수행평가**: assessments(year · semester · subject · grade · title · max_score · dates{반id: 날짜} · note), scores(assessment_id+student_id). 나이스 일괄 입력 양식 채우기는 사용자가 양식 견본을 주면 만들 것(지금은 학년 · 반 · 번호 · 이름 · 점수 xlsx).
 - **조 편성**: groupings(class_id · name · date · groups[[학생id]] · leaders{조번호: 학생id}), group_rules(학년도+학년+반, a<b, type together|apart). 저장 전 결과는 groups.js 의 states(메모리)에만 있음.
 - **칭찬 스티커**: stickers(class_id · student_id · date · reason · n). 학기마다 셈. 이유 버튼은 settings.sticker_reasons.
@@ -82,6 +82,7 @@ serve.py            캐시 끈 로컬 서버 → http://localhost:5500
    - 2단계 원래 계획(나이스 파일 견본 필요, 사용자가 월요일에 올려 주기로 함): 학급 명렬표 엑셀을 올리면 학생 목록 생성, 학생 메모, 수행평가 점수 입력 → **나이스에서 받은 양식에 점수를 채워** 일괄 입력용 엑셀 내려받기, 조 편성, 칭찬 스티커(가칭).
      - 학생은 반-과목이 아니라 **학년도 + 학년 + 반** 단위로 두어 국어 · 독서 반이 같은 명단을 쓰게 할 것.
      - 조 편성: "경우의 수를 다 반영" — 무작위, 특정 학생끼리 붙이기 / 떼어 놓기, 조 수 또는 조 인원, 성별 · 수준 고르게, 조장 지정, 손으로 옮기기(끌어다 놓기), 지난 조와 겹치지 않게, 결과 저장 · 다시 불러오기.
+     - 2026-10-17 사용자 요청: **수준별 나누기는 빼기**(학생 수준 칸도 없앰), 칭찬 스티커는 되돌리기 대신 카드를 누르면 TV 화면 안에서 '부여하기 / 삭제하기'를 묻기(전체 화면이라 일반 modal 은 안 보이므로 .tv-ask 를 오버레이 안에 붙임), 첫 화면 반 칸에 조 편성 · 칭찬 스티커 · 반 메모 버튼을 입력칸 아래 크게.
      - 칭찬 스티커: 수업 중 **TV 화면에 띄워** 보여 줌 → 큰 글씨 전체 화면 모드, 학생(또는 조) 누르면 +1, 되돌리기. 개인정보는 사용자가 학교에 확인해 괜찮다고 함. 견본 파일은 공개 저장소에 절대 올리지 말고 드라이브로 받기.
    - 3단계: 구글 캘린더 연동('진도관리' 캘린더를 따로 만들어 반별 수행평가 날짜 · 중요 일정). 콘솔에서 Calendar API 사용 설정 + 권한 추가가 필요.
 

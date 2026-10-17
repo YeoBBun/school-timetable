@@ -387,3 +387,19 @@ a.tab.active { color: #fff; }
 .col-agenda { font-size: 12px; background: #fff7e0; border-radius: 6px; padding: 4px 8px; color: #7a5600; }
 .col-head .icon-btn { padding: 3px 4px; text-decoration: none; }
 .chip .dot { flex-shrink: 0; }
+
+/* 첫 화면 반 칸 버튼 (조 편성 · 칭찬 스티커 · 반 메모) */
+.col-actions { display: flex; flex-direction: column; gap: 6px; }
+.col-btn { padding: 9px 12px; font-size: 15px; font-weight: 600; text-align: left; display: block; width: 100%; }
+
+/* 칭찬 스티커: 부여 · 삭제 묻기 (TV 화면 안) */
+.tv-ask { position: fixed; inset: 0; background: rgba(5, 8, 14, .7); display: flex; align-items: center; justify-content: center; z-index: 5; }
+.tv-ask-card { background: #1c2433; border: 2px solid #f5b400; border-radius: 20px; padding: 32px 40px; text-align: center; min-width: 460px; }
+.tv-ask-title { font-size: 44px; font-weight: 800; }
+.tv-ask-sub { font-size: 20px; color: #aab4c6; margin: 6px 0 24px; }
+.tv-ask-btns { display: flex; gap: 14px; justify-content: center; }
+.tv-ask-btns button { font: inherit; font-size: 24px; font-weight: 700; border-radius: 14px; padding: 16px 28px; cursor: pointer; border: 2px solid transparent; }
+.tv-ask-give { background: #f5b400; color: #10151f; }
+.tv-ask-del { background: #3a1f24; color: #ff9a9a; border-color: #6b2f37 !important; }
+.tv-ask-del:disabled { opacity: .35; cursor: default; }
+.tv-ask-cancel { background: #262e3d; color: #cfd6e4; }
