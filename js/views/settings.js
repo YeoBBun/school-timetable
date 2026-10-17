@@ -3,6 +3,7 @@ import { h, append, toast, showError, confirmDialog, fmtDateLong, todayStr, down
 import * as S from '../store.js';
 import { signOut } from '../app.js';
 import * as G from '../google.js';
+import { addSamples, clearAllSamples } from './students.js';
 
 export default function render(root) {
   const st = S.settings();
@@ -92,6 +93,12 @@ export default function render(root) {
             h('button', { class: 'btn', onClick: backup }, '백업 파일 내려받기'),
             h('button', { class: 'btn', onClick: restore }, '백업 파일 불러오기'),
             S.drive.rootId ? h('a', { class: 'btn', href: G.folderUrl(S.drive.rootId), target: '_blank', rel: 'noopener' }, '드라이브 폴더 열기') : null)),
+        h('div', { class: 'card' },
+          h('h3', {}, '예시 학생 (시험용)'),
+          h('p', { class: 'muted small', style: { marginTop: 0 } }, '학생이 없는 올해 반마다 가짜 학생 5명을 넣어 조 편성 · 칭찬 스티커 · 수행평가를 미리 써 볼 수 있습니다. 나중에 한 번에 지울 수 있습니다.'),
+          h('div', { class: 'row' },
+            h('button', { class: 'btn', onClick: () => addSamples(S.classesOfYear(S.termOf(todayStr()).year)).catch(showError) }, '모든 반에 예시 학생 넣기'),
+            h('button', { class: 'btn btn-danger', onClick: () => clearAllSamples().catch(showError) }, '예시 학생 모두 지우기'))),
         h('div', { class: 'card' },
           h('h3', {}, '계정'),
           h('p', { style: { marginTop: 0 } }, S.session.user?.email),

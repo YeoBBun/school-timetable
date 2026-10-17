@@ -4,6 +4,9 @@ import { GOOGLE_CLIENT_ID } from './config.js';
 
 const SCOPE_DRIVE = 'https://www.googleapis.com/auth/drive.file';
 const SCOPES = `${SCOPE_DRIVE} email`;
+// 구글 캘린더(선택): 이 앱이 만든 캘린더와 그 일정만 다룰 수 있는 권한
+const SCOPE_CAL = 'https://www.googleapis.com/auth/calendar.app.created';
+const CAL_API = 'https://www.googleapis.com/calendar/v3';
 const TOKEN_KEY = 'jindo.google.token';
 const API = 'https://www.googleapis.com/drive/v3';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
@@ -49,18 +52,19 @@ export async function init() {
 export const hasToken = () => !!token && token.expires_at > Date.now() + 30_000;
 
 // 반드시 버튼 클릭 같은 사용자 동작 안에서 호출해야 팝업이 막히지 않는다
-export function signIn() {
+export function signIn(withCalendar = false) {
   return new Promise((resolve, reject) => {
     const client = window.google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_CLIENT_ID.trim(),
-      scope: SCOPES,
+      scope: withCalendar ? `${SCOPES} ${SCOPE_CAL}` : SCOPES,
       prompt: '',
+      include_granted_scopes: true,
       callback: (resp) => {
         if (resp.error) return reject(new Error(resp.error_description || resp.error));
         if (!window.google.accounts.oauth2.hasGrantedAllScopes(resp, SCOPE_DRIVE)) {
           return reject(new Error("구글 드라이브 권한이 필요합니다. 로그인 창에서 '드라이브' 항목을 체크해 주세요."));
         }
-        token = { access_token: resp.access_token, expires_at: Date.now() + Number(resp.expires_in) * 1000 };
+        token = { access_token: resp.access_token, expires_at: Date.now() + Number(resp.expires_in) * 1000, scope: resp.scope || '' };
         saveToken();
         resolve();
       },
@@ -87,7 +91,7 @@ async function api(url, options = {}) {
     throw new AuthError();
   }
   if (!res.ok) {
-    let msg = `구글 드라이브 오류 (${res.status})`;
+    let msg = `구글 ${url.startsWith(CAL_API) ? '캘린더' : '드라이브'} 오류 (${res.status})`;
     try { msg = (await res.json()).error?.message || msg; } catch { /* 무시 */ }
     const err = new Error(msg);
     err.status = res.status;
@@ -216,3 +220,37 @@ export async function trashFile(fileId) {
 export const fileViewUrl = (id) => `https://drive.google.com/file/d/${id}/view`;
 export const fileDownloadUrl = (id) => `https://drive.google.com/uc?export=download&id=${id}`;
 export const folderUrl = (id) => `https://drive.google.com/drive/folders/${id}`;
+
+// ---- 구글 캘린더 ----
+export const hasCalendar = () => hasToken() && (token.scope || '').includes(SCOPE_CAL);
+
+export async function createCalendar(summary) {
+  const res = await api(`${CAL_API}/calendars`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ summary, timeZone: 'Asia/Seoul' }),
+  });
+  return (await res.json()).id;
+}
+
+const nextDay = (d) => { const t = new Date(`${d}T00:00:00Z`); t.setUTCDate(t.getUTCDate() + 1); return t.toISOString().slice(0, 10); };
+
+// 하루 종일 일정 만들기(eventId 없음) 또는 고치기. 일정 id 를 돌려준다
+export async function saveEvent(calendarId, eventId, { date, summary, description = '' }) {
+  const body = JSON.stringify({ summary, description, start: { date }, end: { date: nextDay(date) } });
+  const base = `${CAL_API}/calendars/${encodeURIComponent(calendarId)}/events`;
+  const res = eventId
+    ? await api(`${base}/${encodeURIComponent(eventId)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body })
+    : await api(base, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+  return (await res.json()).id;
+}
+
+export async function deleteEvent(calendarId, eventId) {
+  try {
+    await api(`${CAL_API}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`, { method: 'DELETE' });
+  } catch (err) {
+    if (err.status !== 404 && err.status !== 410) throw err;
+  }
+}
+
+export const calendarUrl = () => 'https://calendar.google.com/calendar/r';
+

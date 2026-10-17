@@ -138,3 +138,27 @@ export function downloadText(filename, text, mime = 'text/plain') {
   a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
 }
+
+// TV 로 띄우는 전체 화면 (조 편성 · 칭찬 스티커). build(body) 로 내용을 그리고, redraw() 로 다시 그린다
+export function tvOverlay(title, build, { onClose } = {}) {
+  const body = h('div', { class: 'tv-body' });
+  const close = () => {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    overlay.remove();
+    document.removeEventListener('keydown', onKey);
+    onClose?.();
+  };
+  const onKey = (e) => { if (e.key === 'Escape' && !document.fullscreenElement) close(); };
+  const overlay = h('div', { class: 'tv' },
+    h('div', { class: 'tv-head' },
+      h('h1', {}, title),
+      h('span', { class: 'grow' }),
+      h('button', { class: 'btn', onClick: () => (document.fullscreenElement ? document.exitFullscreen() : overlay.requestFullscreen()).catch(() => {}) }, '전체 화면'),
+      h('button', { class: 'btn', onClick: close }, '닫기 ✕')),
+    body);
+  const redraw = () => { body.replaceChildren(); build(body); };
+  redraw();
+  document.body.append(overlay);
+  document.addEventListener('keydown', onKey);
+  return { close, redraw, overlay };
+}
