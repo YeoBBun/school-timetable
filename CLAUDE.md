@@ -32,7 +32,9 @@ js/calendar.js      앱 → 구글 '진도관리' 캘린더 한 방향 동기화
 js/xlsx.js          SheetJS(cdnjs xlsx 0.18.5)를 필요할 때만 불러 엑셀 읽기 · 쓰기
 js/views/search.js  찾기(기록 · 자료 · 메모 검색, 단원별 보기)
 js/views/materials.js  자료 화면 + 업로드/첨부 공용 함수
-js/views/timetable.js, settings.js
+js/views/timetable.js  설정의 '시간표 · 반' 탭 (보는 학기의 시간표 · 그 학년도 반, 다른 학기 시간표 가져오기)
+js/views/terms.js   설정의 '학년도 · 학기 · 단원' 탭 (학기 목록, 2학기 시작일, 단원 여러 개 · 순서 · 다른 학기에서 복사)
+js/views/settings.js  설정 화면 탭 묶음 + 기본 설정
 serve.py            캐시 끈 로컬 서버 → http://localhost:5500
 ```
 
@@ -62,6 +64,8 @@ serve.py            캐시 끈 로컬 서버 → http://localhost:5500
 - 로그인 토큰은 약 1시간 동안 localStorage 에 둡니다. 만료되면 AuthError → 배지에 **다시 연결** 버튼이 뜨고, 누르면 `S.resume()` 으로 밀린 저장을 이어서 합니다.
 
 ### 주요 기능 규칙
+- **보는 학기(엑셀 시트처럼)**: 왼쪽 위 학기 고르기 → `S.setViewTerm(t)` 가 `S.view.date`(홈 날짜)를 그 학기 안(오늘 또는 첫 평일)으로 옮김. `S.viewTerm()` = termOf(view.date). 홈 · 수업 자료 · 수행평가 · 시간표 · 반 화면 탭(수행평가 · 스티커)이 이 학기를 따름. 지금 학기가 아니면 화면 위에 띠. 학기 목록은 `S.allTerms()`(데이터 있는 학기 + 지난 · 이번 · 다음 학기). 새로 고치면 오늘로 돌아감.
+- **학기별 시간표**: timetable_slots 에 year · semester (`S.slotsOf(term)`). 예전 칸은 migrate 가 만든 날짜의 학기를 붙임. 학년도가 다른 학기에서 가져오면 학년 · 반 · 과목이 같은 반으로 옮겨 칠함.
 - **메뉴**(2026-10-17 사용자 요청): 홈(#/today) · 수업 자료 · 수행평가 · 일정 · 찾기 · 설정. 시간표 · 반은 설정 안의 탭(#/settings/timetable, 예전 #/timetable 도 열림). 홈의 반 칸 맨 위 큰 '반 이름 + 반 관리 ›' 이 반 화면으로 가는 입구.
 - **첫 화면**(#/today): 위에 그날 시간표(`S.effectiveSlots` = 주간 시간표 + timetable_changes, class_id null 이면 결강), 아래에 담당 반 칸. 칸마다 단원 선택(기본: 그 반이 이번 학기 마지막으로 쓴 단원), 한 줄 입력(Enter, 한글 조합 중 Enter 는 무시), 반 메모, 최근 기록 6개. 기록에 파일을 끌어다 놓으면 `attachDialog(lesson, files)`.
 - **자료는 기록에 붙입니다**(lesson_materials). 같은 자료를 여러 반에 쓰면 연결만 여러 개.

@@ -1,5 +1,5 @@
 // 수행평가: 평가 만들기(학기 · 과목 · 학년), 반별 날짜, 점수 입력, 엑셀 내려받기
-import { h, append, toast, showError, modal, confirmDialog, todayStr, fmtMD, classChip } from '../ui.js';
+import { h, append, toast, showError, modal, confirmDialog, fmtMD, classChip } from '../ui.js';
 import * as S from '../store.js';
 import { downloadXlsx } from '../xlsx.js';
 import { go } from '../app.js';
@@ -9,28 +9,17 @@ const view = { term: null, subject: '', openId: '', classId: '' };
 // 평가 대상 반: 그 학년도 · 과목 · 학년의 반
 const targetClasses = (a) => S.classesOfYear(a.year).filter((c) => c.subject === a.subject && c.grade === a.grade);
 
-function knownTerms() {
-  const map = new Map();
-  const add = (t) => map.set(`${t.year}-${t.semester}`, t);
-  add(S.termOf(todayStr()));
-  S.data.assessments.forEach((a) => add({ year: a.year, semester: a.semester }));
-  return [...map.values()].sort((a, b) => b.year - a.year || b.semester - a.semester);
-}
 
 // ---- 수행평가 메뉴 ----
 export default function render(root) {
-  const terms = knownTerms();
-  if (!view.term || !terms.some((t) => S.sameTerm(t, view.term))) view.term = terms[0];
-  const term = view.term;
+  // 학기는 왼쪽 위에서 고른 학기를 따른다
+  const term = S.viewTerm();
+  if (!view.term || !S.sameTerm(view.term, term)) { view.term = term; view.openId = ''; }
   const subjects = S.subjectsOfYear(term.year);
   if (!subjects.includes(view.subject)) view.subject = subjects[0] || '';
   const rerender = () => { root.replaceChildren(); render(root); };
   const open = S.data.assessments.find((a) => a.id === view.openId);
 
-  const termSel = h('select', {
-    value: `${term.year}-${term.semester}`,
-    onChange: (e) => { const [y, s] = e.target.value.split('-').map(Number); view.term = { year: y, semester: s }; view.openId = ''; rerender(); },
-  }, terms.map((t) => h('option', { value: `${t.year}-${t.semester}` }, S.termLabel(t))));
   const subjectTabs = subjects.length > 1
     ? h('div', { class: 'seg' }, subjects.map((sj) => h('button', { class: sj === view.subject ? 'active' : '', onClick: () => { view.subject = sj; view.openId = ''; rerender(); } }, sj)))
     : null;
@@ -50,7 +39,7 @@ export default function render(root) {
     .sort((a, b) => a.grade - b.grade || a.created_at.localeCompare(b.created_at));
   append(root,
     h('div', { class: 'page-head' },
-      h('h2', {}, '수행평가'), termSel, subjectTabs,
+      h('h2', {}, '수행평가'), h('span', { class: 'muted' }, S.termLabel(term)), subjectTabs,
       view.subject ? h('button', { class: 'btn btn-primary', onClick: () => assessmentDialog(null, { term, subject: view.subject }) }, '+ 새 수행평가') : null),
     !view.subject
       ? h('div', { class: 'empty' }, `${term.year}학년도 담당 반이 없습니다. '설정 → 시간표 · 반'에서 먼저 반을 추가하세요.`)
@@ -218,7 +207,7 @@ export function assessmentDialog(a, { term, subject } = {}) {
 
 // ---- 반 화면의 '수행평가' 탭: 이 반이 보는 평가마다 점수 표 ----
 export function renderClassAssess(root, cls) {
-  const term = S.termOf(todayStr());
+  const term = S.viewTerm();
   const list = cls.grade ? S.assessmentsOf(cls, term) : [];
   append(root,
     h('div', { class: 'row', style: { marginBottom: '12px' } },

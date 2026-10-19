@@ -1,6 +1,6 @@
 import * as G from './google.js';
 import * as S from './store.js';
-import { h, toast, showError } from './ui.js';
+import { h, toast, showError, todayStr } from './ui.js';
 import home from './views/home.js';
 import classpage from './views/classpage.js';
 import search from './views/search.js';
@@ -67,11 +67,31 @@ function shell() {
     ROUTES.filter((r) => r.nav !== false).map((r) => h('a', { href: `#/${r.path}`, class: r.path === (route.parent || route.path) ? 'active' : '' }, r.label)));
   const side = h('aside', { class: 'sidebar' },
     h('div', { class: 'brand' }, '진도관리'),
+    h('div', { class: 'term-picker', id: 'term-picker' }),
     nav,
     h('div', { class: 'side-footer' },
       syncBadge(),
       h('div', { class: 'muted small', id: 'user-email' }, S.session.user?.email || '')));
   app.replaceChildren(h('div', { class: 'layout' }, side, viewEl));
+}
+
+// 왼쪽 위 학기 고르기 (엑셀 시트 탭처럼 앱 전체가 그 학기를 보여 준다)
+function drawTermPicker() {
+  const box = document.getElementById('term-picker');
+  if (!box) return;
+  const cur = S.termOf(todayStr());
+  const sel = h('select', {
+    value: S.termKey(S.viewTerm()), title: '보는 학년도 · 학기',
+    onChange: (e) => S.setViewTerm(S.parseTermKey(e.target.value)),
+  }, S.allTerms().map((t) => h('option', { value: S.termKey(t) }, `${S.termLabel(t)}${S.sameTerm(t, cur) ? ' (지금)' : ''}`)));
+  box.replaceChildren(sel);
+}
+
+function otherTermBanner() {
+  if (S.isCurrentTerm()) return null;
+  return h('div', { class: 'term-banner' },
+    h('span', {}, `📂 ${S.termLabel(S.viewTerm())}를 보고 있습니다. 여기서 만든 단원 · 반 · 시간표는 이 학기에 들어갑니다.`),
+    h('button', { class: 'btn btn-sm', onClick: () => S.setViewTerm(S.termOf(todayStr())) }, '이번 학기로 돌아가기'));
 }
 
 export function render({ remote = false } = {}) {
@@ -94,6 +114,9 @@ export function render({ remote = false } = {}) {
   // data-fk 가 붙은 입력칸에 커서가 있으면 다시 그린 뒤에도 그 칸에 커서를 둔다 (표에서 Tab · Enter 로 이어 입력)
   const fk = sameView ? document.activeElement?.dataset?.fk : null;
   viewEl.replaceChildren();
+  drawTermPicker();
+  const banner = otherTermBanner();
+  if (banner) viewEl.append(banner);
   try {
     route.view(viewEl, route.arg, route.sub);
   } catch (err) {

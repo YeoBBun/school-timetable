@@ -3,6 +3,7 @@
 // 켤 때 기다리지 않도록 마지막 데이터를 이 PC 브라우저에 사본으로 두고(로그아웃하면 지움), 화면부터 보여 준 뒤 드라이브와 합친다.
 // 합칠 때는 항목마다 마지막으로 바뀐 시각(_u)이 더 늦은 쪽을 남기고, 지운 항목은 지운 시각(tomb)으로 기억한다.
 import * as G from './google.js';
+import { todayStr, addDays } from './ui.js';
 
 // curriculum_items · item_materials 는 예전 버전(차시 목록) 데이터를 보존하려고 남겨 둔다
 export const TABLES = ['classes', 'curriculum_items', 'timetable_slots', 'timetable_changes', 'lessons', 'materials', 'item_materials', 'lesson_materials', 'days_off', 'settings',
@@ -429,10 +430,15 @@ export function subjectsOfYear(year) {
   return [...new Set(data.classes.filter((c) => classYear(c) === year).map((c) => c.subject).filter(Boolean))].sort(koSort);
 }
 
-// 예전 '101반' 같은 이름을 학년 · 반 숫자로 나눈다 (드라이브를 읽은 뒤 한 번)
+// 예전 데이터 고치기 (드라이브를 읽은 뒤 한 번): 학기 없는 시간표 칸에 학기 붙이기, '101반' 같은 이름을 학년 · 반 숫자로 나누기
 function migrate() {
   const stamp = now();
   let changed = false;
+  for (const s of data.timetable_slots) {
+    if (s.year != null) continue;
+    Object.assign(s, termOf(s.created_at ? s.created_at.slice(0, 10) : todayStr()), { _u: stamp });
+    changed = true;
+  }
   for (const c of data.classes) {
     if (c.grade != null) continue;
     const m = /^(\d)(\d{2})반?$/.exec((c.name || '').trim()) || /^(\d)\s*-\s*(\d{1,2})$/.exec((c.name || '').trim());
@@ -451,7 +457,7 @@ export function subjects() {
 // 그날 실제 시간표: 주간 시간표에 그날의 변경(교체 · 보강 · 결강)을 덮어쓴다
 // 반환: [{ period, class_id, changed, note, base_class_id }] (수업 있는 교시만, 교시 순)
 export function effectiveSlots(date, weekday) {
-  const base = new Map(data.timetable_slots.filter((s) => s.weekday === weekday).map((s) => [s.period, s.class_id]));
+  const base = new Map(slotsOf(termOf(date)).filter((s) => s.weekday === weekday).map((s) => [s.period, s.class_id]));
   const changes = new Map(data.timetable_changes.filter((c) => c.date === date).map((c) => [c.period, c]));
   const periods = new Set([...base.keys(), ...changes.keys()]);
   const out = [];
@@ -469,6 +475,8 @@ export function settings() {
 }
 
 // ---- 학년도 · 학기 ----
+// 주간 시간표는 학기마다 따로 (예전 칸은 migrate 가 학기를 붙인다)
+export const slotsOf = (term) => data.timetable_slots.filter((s) => s.year == null || sameTerm(s, term));
 // 학년도는 3월에 시작한다(1~2월은 앞 학년도 2학기). 2학기 시작일은 설정에서 바꿀 수 있다
 export function termOf(dateStr) {
   const [y, m] = dateStr.split('-').map(Number);
@@ -477,6 +485,52 @@ export function termOf(dateStr) {
   return { year, semester };
 }
 export const termLabel = (t) => `${t.year}학년도 ${t.semester}학기`;
+export const termKey = (t) => `${t.year}-${t.semester}`;
+export const parseTermKey = (k) => { const [year, semester] = k.split('-').map(Number); return { year, semester }; };
+export const nextTerm = (t) => (t.semester === 1 ? { year: t.year, semester: 2 } : { year: t.year + 1, semester: 1 });
+export const prevTerm = (t) => (t.semester === 2 ? { year: t.year, semester: 1 } : { year: t.year - 1, semester: 2 });
+
+// 학기의 첫날 · 마지막 날
+export function termRange(t) {
+  const s2 = settings().sem2_start;
+  return t.semester === 1
+    ? { start: `${t.year}-03-01`, end: addDays(`${t.year}-${s2}`, -1) }
+    : { start: `${t.year}-${s2}`, end: addDays(`${t.year + 1}-03-01`, -1) };
+}
+
+// ---- 보는 학기: 엑셀 시트처럼 앱 전체가 이 학기를 보여 준다 ----
+// 기준은 홈 화면 날짜. 학기를 고르면 그 학기 안의 날짜(오늘이 들어 있으면 오늘, 아니면 첫날)로 옮긴다
+export const view = { date: todayStr() };
+export const viewTerm = () => termOf(view.date);
+export const isCurrentTerm = () => sameTerm(viewTerm(), termOf(todayStr()));
+export function setViewDate(d) {
+  view.date = d;
+  emit();
+}
+export function setViewTerm(t) {
+  const today = todayStr();
+  const r = termRange(t);
+  if (today >= r.start && today <= r.end) return setViewDate(today);
+  // 첫날이 주말이면 다음 월요일로
+  let d = r.start;
+  while ([0, 6].includes(new Date(`${d}T00:00:00`).getDay())) d = addDays(d, 1);
+  setViewDate(d);
+}
+
+// 고를 수 있는 학기: 데이터가 있는 학기 + 지난 학기 · 이번 학기 · 다음 학기 (최근 학기부터)
+export function allTerms() {
+  const map = new Map();
+  const add = (t) => t && t.year && map.set(termKey(t), { year: t.year, semester: t.semester });
+  const cur = termOf(todayStr());
+  [prevTerm(cur), cur, nextTerm(cur), viewTerm()].forEach(add);
+  for (const c of data.classes) { const y = classYear(c); add({ year: y, semester: 1 }); add({ year: y, semester: 2 }); }
+  data.units.forEach(add);
+  data.assessments.forEach(add);
+  data.timetable_slots.forEach(add);
+  for (const m of data.materials) add(m.year ? m : termOf(m.created_at.slice(0, 10)));
+  for (const l of data.lessons) add(termOf(l.date));
+  return [...map.values()].sort((a, b) => b.year - a.year || b.semester - a.semester);
+}
 export const sameTerm = (a, b) => a.year === b.year && a.semester === b.semester;
 
 // 반의 학년도 (예전 데이터는 만든 날짜로 정한다)
