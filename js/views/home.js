@@ -8,17 +8,18 @@ import { openStickerBoard } from './stickers.js';
 import { eventDialog } from './schedule.js';
 
 const RECENT = 6; // 반마다 보여 줄 최근 기록 수
-let date = todayStr();
+let date = S.view.date; // 보는 날짜 (store 의 view.date 와 같게 둔다 · 학기 고르기가 이걸 옮긴다)
 const drafts = new Map(); // 반 id → 입력 중인 글
 const unitPick = new Map(); // '반 id|학년도|학기' → 고른 단원 id
 let focusClass = null; // 다시 그린 뒤 입력칸에 커서를 둘 반
 
 export function showDate(d) {
-  date = d;
+  S.view.date = d;
   go('today');
 }
 
 export default function render(root) {
+  date = S.view.date;
   const term = S.termOf(date);
   const classes = S.classesOfYear(term.year);
   const off = S.data.days_off.find((d) => d.date === date);
@@ -168,7 +169,7 @@ function changeDialog(d) {
   const st = S.settings();
   const wd = weekdayOf(d);
   const classes = S.classesOfYear(S.termOf(d).year);
-  const base = new Map(S.data.timetable_slots.filter((s) => s.weekday === wd).map((s) => [s.period, s.class_id]));
+  const base = new Map(S.slotsOf(S.termOf(d)).filter((s) => s.weekday === wd).map((s) => [s.period, s.class_id]));
   const existing = new Map(S.data.timetable_changes.filter((c) => c.date === d).map((c) => [c.period, c]));
   const maxPeriod = Math.max(st.periods, ...existing.keys(), ...base.keys());
   const label = (id) => S.classLabel(S.classById(id));

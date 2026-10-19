@@ -7,7 +7,7 @@ const reasons = () => S.settings().sticker_reasons || DEFAULT_REASONS;
 
 export function renderStickersTab(root, cls) {
   const students = S.studentsOf(cls);
-  const term = S.termOf(todayStr());
+  const term = S.viewTerm();
   if (!students.length) {
     append(root, h('div', { class: 'empty' }, '학생 명단이 없습니다. ', h('a', { href: `#/class/${cls.id}/students` }, '학생 탭에서 먼저 넣으세요.')));
     return;

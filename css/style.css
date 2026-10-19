@@ -432,3 +432,17 @@ a.tab.active { color: #fff; }
 .col-title-sub { display: flex; align-items: center; gap: 6px; }
 .col-title-go { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; }
 .col-title .badge { flex-shrink: 0; }
+
+/* 보는 학기 (왼쪽 위) */
+.term-picker { padding: 0 6px 14px; }
+.term-picker select { width: 100%; background: #2a3344; color: #fff; border: 1px solid #3a4558; font-weight: 600; padding: 8px 10px; }
+.term-banner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: #fff4e0; border: 1px solid #f3cf8a; color: #6b4a00; border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; font-weight: 600; }
+@media (max-width: 900px) { .term-picker { padding: 0; } .term-picker select { width: auto; } }
+.unit-row { padding: 4px 0; border-bottom: 1px solid var(--border); flex-wrap: nowrap; }
+.unit-row input { min-width: 0; }
+.copy-preview { max-height: 220px; overflow-y: auto; margin: 10px 0; padding: 8px 10px; background: var(--surface-2); border-radius: 8px; }
+tr.row-on td { background: var(--primary-soft); }
+.past-mats { margin-top: 10px; padding: 8px 10px; background: #f7f3ea; border-radius: 8px; }
+.past-mats summary { cursor: pointer; font-size: 13px; font-weight: 600; color: #7a5600; }
+.term-row { display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-top: 1px solid var(--border); border-radius: 6px; }
+.term-row.on { background: var(--primary-soft); }

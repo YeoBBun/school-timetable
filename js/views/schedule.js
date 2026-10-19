@@ -70,7 +70,7 @@ function calendarCard() {
 }
 
 export function eventDialog(ev = null, preset = {}) {
-  const classes = S.classesOfYear(S.termOf(todayStr()).year);
+  const classes = S.classesOfYear(S.viewTerm().year);
   const date = h('input', { type: 'date', value: ev?.date || preset.date || todayStr() });
   const title = h('input', { type: 'text', value: ev?.title || '', placeholder: '예: 학교 축제(수업 없음), 독서 발표 준비물 확인' });
   const cls = h('select', { value: ev?.class_id || preset.classId || '' }, h('option', { value: '' }, '— 반 상관없음 —'), classes.map((c) => h('option', { value: c.id }, S.classLabel(c))));

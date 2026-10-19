@@ -1,5 +1,5 @@
 // 수업 자료: 드라이브 '수업 자료/학년도/학기/단원/수업·평가' 폴더로 정리해서 올리고, 수업 기록에 붙인다
-import { h, append, toast, showError, modal, confirmDialog, fmtSize, fmtMD, todayStr } from '../ui.js';
+import { h, append, toast, showError, modal, confirmDialog, fmtSize, fmtMD } from '../ui.js';
 import * as G from '../google.js';
 import * as S from '../store.js';
 
@@ -297,16 +297,6 @@ async function deleteUnit(unit) {
 
 // ---- 자료 화면 ----
 
-// 자료나 단원이 있는 학기 + 지금 학기 (최근 학기부터)
-function knownTerms() {
-  const map = new Map();
-  const add = (t) => map.set(`${t.year}-${t.semester}`, t);
-  add(S.termOf(todayStr()));
-  S.data.units.forEach((u) => add({ year: u.year, semester: u.semester }));
-  S.data.materials.forEach((m) => add(materialTerm(m)));
-  return [...map.values()].sort((a, b) => b.year - a.year || b.semester - a.semester);
-}
-
 // 그 학기에 쓰는 과목들 (담당 반 + 단원 + 자료)
 function termSubjects(term) {
   const set = new Set(S.subjectsOfYear(term.year));
@@ -316,19 +306,15 @@ function termSubjects(term) {
 }
 
 export default function render(root) {
-  const terms = knownTerms();
-  if (!view.term || !terms.some((t) => S.sameTerm(t, view.term))) view.term = terms[0];
-  const term = view.term;
+  // 학기는 왼쪽 위에서 고른 학기를 따른다
+  const term = S.viewTerm();
+  if (!view.term || !S.sameTerm(view.term, term)) { view.term = term; view.unitId = ''; }
   const subjects = termSubjects(term);
   if (!subjects.includes(view.subject)) { view.subject = subjects[0] || ''; view.unitId = ''; }
   const subject = view.subject || null;
   if (view.unitId && !S.unitById(view.unitId)) view.unitId = '';
   const rerender = () => { root.replaceChildren(); render(root); };
 
-  const termSel = h('select', {
-    value: `${term.year}-${term.semester}`,
-    onChange: (e) => { const [y, s] = e.target.value.split('-').map(Number); view.term = { year: y, semester: s }; view.unitId = ''; rerender(); },
-  }, terms.map((t) => h('option', { value: `${t.year}-${t.semester}` }, S.termLabel(t))));
   const subjectTabs = subjects.length > 1
     ? h('div', { class: 'seg' }, subjects.map((sj) => h('button', { class: sj === subject ? 'active' : '', onClick: () => { view.subject = sj; view.unitId = ''; rerender(); } }, sj)))
     : null;
@@ -362,7 +348,7 @@ export default function render(root) {
 
   append(root,
     h('div', { class: 'page-head' },
-      h('h2', {}, '수업 자료'), termSel, subjectTabs, search,
+      h('h2', {}, '수업 자료'), h('span', { class: 'muted' }, S.termLabel(term)), subjectTabs, search,
       S.drive.materialsId ? h('a', { class: 'btn', href: G.folderUrl(S.drive.materialsId), target: '_blank', rel: 'noopener' }, '드라이브 폴더 열기') : null),
     upload,
     h('div', { class: 'section-title' }, `${S.termLabel(term)}${subject ? ` ${subject}` : ''} 단원별 자료`),
@@ -381,7 +367,27 @@ function unitBlock(unit, list) {
       h('span', { class: 'grow' }),
       unit ? h('button', { class: 'icon-btn', title: '이름 바꾸기', onClick: () => renameUnitDialog(unit) }, '✎') : null,
       unit ? h('button', { class: 'icon-btn danger', title: '단원 지우기', onClick: () => deleteUnit(unit) }, '✕') : null),
-    list.length ? [part('lesson'), part('eval')] : h('p', { class: 'muted small', style: { margin: '8px 0 0' } }, '아직 자료가 없습니다.'));
+    list.length ? [part('lesson'), part('eval')] : h('p', { class: 'muted small', style: { margin: '8px 0 0' } }, '아직 자료가 없습니다.'),
+    unit ? pastUnitMaterials(unit) : null);
+}
+
+// 지난 학년도에 이름(과 과목)이 같은 단원의 자료 (작년에 이 단원에서 뭘 썼더라?)
+const sameName = (a, b) => a.replace(/\s+/g, '') === b.replace(/\s+/g, '');
+function pastUnitMaterials(unit) {
+  const past = S.data.units.filter((u) => u.year < unit.year && sameName(u.name, unit.name) && (!unit.subject || !u.subject || u.subject === unit.subject))
+    .sort((a, b) => b.year - a.year || b.semester - a.semester);
+  const mats = past.flatMap((u) => S.data.materials.filter((m) => m.unit_id === u.id).map((m) => ({ m, u })));
+  if (!mats.length) return null;
+  return h('details', { class: 'past-mats' },
+    h('summary', {}, `📂 지난 학년도 같은 단원 자료 ${mats.length}개`),
+    mats.map(({ m, u }) => {
+      const used = S.lessonsOfMaterial(m.id);
+      return h('div', { class: 'mat-row' },
+        h('span', { class: 'file-name grow', onClick: () => openMaterial(m) }, `${m.kind === 'link' ? '🔗' : '📄'} ${m.name}`),
+        h('span', { class: 'muted small' }, `${S.termLabel(u)} · ${PURPOSE[m.purpose] || '수업'}`),
+        h('span', { class: 'muted small' }, used.length ? `쓴 수업 ${used.length}회` : '안 씀'));
+    }),
+    h('p', { class: 'muted small', style: { margin: '6px 0 0' } }, "수업 기록의 📎 자료 붙이기에서 '다른 단원 · 과목 자료도 보기'를 켜면 이 자료를 올해 수업에 다시 붙일 수 있습니다."));
 }
 
 function materialRow(m) {

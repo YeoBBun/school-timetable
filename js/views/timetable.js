@@ -12,8 +12,10 @@ document.addEventListener('pointerup', () => activeCommit?.());
 document.addEventListener('pointercancel', () => activeCommit?.());
 document.addEventListener('pointermove', (e) => activeMove?.(e));
 
-// 올해 학년도 반만 다룬다 (지난 학년도 반은 기록 보존용으로 아래에 따로 보여 준다)
-const thisYear = () => S.termOf(todayStr()).year;
+// 보는 학기(왼쪽 위에서 고른 학기)의 반 · 시간표를 다룬다 (지난 학년도 반은 아래에 따로 보여 준다)
+const thisYear = () => S.viewTerm().year;
+const term = () => S.viewTerm();
+const slots = () => S.slotsOf(term());
 
 export default function render(root) {
   const st = S.settings();
@@ -23,6 +25,11 @@ export default function render(root) {
   append(root,
     h('div', { class: 'cols' },
       h('div', {},
+        h('div', { class: 'row', style: { marginBottom: '10px' } },
+          h('strong', {}, `${S.termLabel(term())} 주간 시간표`),
+          h('span', { class: 'muted small' }, '학기마다 따로 저장됩니다. 다른 학기는 왼쪽 위에서 고르세요.'),
+          h('span', { class: 'grow' }),
+          copyButton()),
         classes.length
           ? [brushBar(classes), grid(st)]
           : h('div', { class: 'empty' }, '오른쪽에서 먼저 수업하는 반을 추가하세요.'),
@@ -56,16 +63,40 @@ function changesPanel() {
       : h('p', { class: 'muted small' }, '예정된 변경이 없습니다.'));
 }
 
+// 다른 학기 시간표 가져오기 (학년도가 다르면 학년 · 반 · 과목이 같은 올해 반으로 옮겨 칠한다)
+function copyButton() {
+  const sources = S.allTerms().filter((t) => !S.sameTerm(t, term()) && S.slotsOf(t).some((x) => x.year != null));
+  if (!sources.length) return null;
+  const sel = h('select', {}, sources.map((t) => h('option', { value: S.termKey(t) }, S.termLabel(t))));
+  const run = async () => {
+    const from = S.parseTermKey(sel.value);
+    const targets = S.classesOfYear(thisYear());
+    const match = (id) => {
+      const c = S.classById(id);
+      if (!c) return null;
+      if (S.classYear(c) === thisYear()) return c.id;
+      return targets.find((t) => t.grade === c.grade && t.room === c.room && t.subject === c.subject)?.id || null;
+    };
+    const rows = S.slotsOf(from).filter((x) => x.year != null).map((x) => ({ weekday: x.weekday, period: x.period, class_id: match(x.class_id) })).filter((x) => x.class_id);
+    if (!rows.length) return toast('가져올 칸이 없습니다. 올해 반을 먼저 만드세요.', 'error');
+    if (slots().length && !await confirmDialog(`${S.termLabel(term())} 시간표를 ${S.termLabel(from)} 시간표로 바꿀까요?`, { okLabel: '가져오기' })) return;
+    try {
+      await S.db.from('timetable_slots').delete().in('id', slots().map((x) => x.id));
+      await S.db.from('timetable_slots').insert(rows.map((r) => ({ ...r, year: term().year, semester: term().semester })));
+      toast(`${rows.length}칸을 가져왔습니다.`, 'ok');
+    } catch (err) { showError(err); }
+  };
+  return h('span', { class: 'row' }, sel, h('button', { class: 'btn btn-sm', onClick: run }, '시간표 가져오기'));
+}
+
 function brushBar(classes) {
-  const hours = (id) => S.data.timetable_slots.filter((s) => s.class_id === id).length;
+  const hours = (id) => slots().filter((s) => s.class_id === id).length;
   const pick = (id) => { brush = id; go('settings/timetable'); };
   const clearAll = async () => {
-    if (!S.data.timetable_slots.length) return;
-    if (!await confirmDialog('시간표의 모든 칸을 비울까요? (수업 기록은 그대로 남습니다)', { okLabel: '모두 비우기' })) return;
+    if (!slots().length) return;
+    if (!await confirmDialog(`${S.termLabel(term())} 시간표의 모든 칸을 비울까요? (수업 기록은 그대로 남습니다)`, { okLabel: '모두 비우기' })) return;
     try {
-      const { error } = await S.db.from('timetable_slots').delete().eq('user_id', S.session.user.id);
-      if (error) throw error;
-      await S.reload('timetable_slots');
+      await S.db.from('timetable_slots').delete().in('id', slots().map((x) => x.id));
     } catch (err) { showError(err); }
   };
   return h('div', { class: 'brush-bar' },
@@ -82,7 +113,7 @@ function brushBar(classes) {
 function grid(st) {
   const days = Array.from({ length: st.weekdays }, (_, i) => i + 1);
   const periods = Array.from({ length: st.periods }, (_, i) => i + 1);
-  const slotAt = (wd, p) => S.data.timetable_slots.find((s) => s.weekday === wd && s.period === p);
+  const slotAt = (wd, p) => slots().find((s) => s.weekday === wd && s.period === p);
 
   // 드래그하는 동안 바뀐 칸: key -> 반 id 또는 null(비우기)
   const pending = new Map();
@@ -115,13 +146,13 @@ function grid(st) {
     for (const [key, classId] of pending) {
       const [wd, p] = key.split('-').map(Number);
       const slot = slotAt(wd, p);
-      if (classId) { if (slot?.class_id !== classId) upserts.push({ user_id: S.session.user.id, weekday: wd, period: p, class_id: classId }); }
+      if (classId) { if (slot?.class_id !== classId) upserts.push({ weekday: wd, period: p, class_id: classId, year: term().year, semester: term().semester }); }
       else if (slot) deletes.push(slot.id);
     }
     pending.clear();
     try {
       if (upserts.length) {
-        const { error } = await S.db.from('timetable_slots').upsert(upserts, { onConflict: 'user_id,weekday,period' });
+        const { error } = await S.db.from('timetable_slots').upsert(upserts, { onConflict: 'user_id,year,semester,weekday,period' });
         if (error) throw error;
       }
       if (deletes.length) {

@@ -1,20 +1,22 @@
-// 설정: 탭 두 개 — 기본 설정(교시 수, 수업 요일, 2학기 시작일, 휴업일, 백업, 로그아웃) · 시간표 · 반
+// 설정: 탭 세 개 — 기본 설정(교시 수, 수업 요일, 휴업일, 예시 학생, 백업, 로그아웃) · 시간표 · 반 · 학년도 · 학기 · 단원
 import { h, append, toast, showError, confirmDialog, fmtDateLong, todayStr, downloadText } from '../ui.js';
 import * as S from '../store.js';
 import { signOut } from '../app.js';
 import * as G from '../google.js';
 import { addSamples, clearAllSamples } from './students.js';
 import timetable from './timetable.js';
+import terms from './terms.js';
 
 export default function render(root, sub) {
-  const tabs = [{ key: '', label: '기본 설정' }, { key: 'timetable', label: '시간표 · 반' }];
-  const cur = sub === 'timetable' ? 'timetable' : '';
+  const tabs = [{ key: '', label: '기본 설정' }, { key: 'timetable', label: '시간표 · 반' }, { key: 'terms', label: '학년도 · 학기 · 단원' }];
+  const cur = tabs.some((t) => t.key === sub) ? sub : '';
   const body = h('div', {});
   append(root,
     h('div', { class: 'page-head' }, h('h2', {}, '설정')),
     h('div', { class: 'tabs' }, tabs.map((t) => h('a', { class: `tab ${t.key === cur ? 'active' : ''}`, href: t.key ? `#/settings/${t.key}` : '#/settings' }, t.label))),
     body);
   if (cur === 'timetable') timetable(body);
+  else if (cur === 'terms') terms(body);
   else general(body);
 }
 
@@ -32,12 +34,6 @@ function general(root) {
     [4, 5, 6, 7, 8, 9, 10].map((n) => h('option', { value: String(n) }, `${n}교시`)));
   const weekdays = h('select', { value: String(st.weekdays), onChange: (e) => saveSettings({ weekdays: Number(e.target.value) }) },
     h('option', { value: '5' }, '월 ~ 금'), h('option', { value: '6' }, '월 ~ 토'));
-  // 2학기 시작일: 올해 날짜로 보여 주고 월-일만 저장한다
-  const year = new Date().getFullYear();
-  const sem2 = h('input', {
-    type: 'date', value: `${year}-${st.sem2_start}`,
-    onChange: (e) => e.target.value && saveSettings({ sem2_start: e.target.value.slice(5) }),
-  });
 
   // 휴업일
   const offDate = h('input', { type: 'date', value: todayStr() });
@@ -95,10 +91,6 @@ function general(root) {
           h('h3', {}, '시간표'),
           h('div', { class: 'row' }, h('label', {}, '하루 교시 수', periods), h('label', {}, '수업 요일', weekdays))),
         h('div', { class: 'card' },
-          h('h3', {}, '학년도 · 학기'),
-          h('div', { class: 'row' }, h('label', {}, '2학기 시작일', sem2)),
-          h('p', { class: 'muted small', style: { marginBottom: 0 } }, '학년도는 3월 1일에 시작합니다. 기록과 자료는 날짜에 따라 학기별로 정리됩니다(1~2월은 앞 학년도 2학기).')),
-        h('div', { class: 'card' },
           h('h3', {}, '데이터'),
           h('p', { class: 'muted small', style: { marginTop: 0 } }, "모든 기록은 구글 드라이브 '진도관리' 폴더의 '진도관리-데이터.json' 파일에 자동으로 저장됩니다. 따로 백업해 두려면 아래에서 내려받으세요. (수업 자료 파일은 '수업 자료' 폴더에 있습니다)"),
           h('div', { class: 'row' },
@@ -109,7 +101,7 @@ function general(root) {
           h('h3', {}, '예시 학생 (시험용)'),
           h('p', { class: 'muted small', style: { marginTop: 0 } }, '학생이 없는 올해 반마다 가짜 학생 5명을 넣어 조 편성 · 칭찬 스티커 · 수행평가를 미리 써 볼 수 있습니다. 나중에 한 번에 지울 수 있습니다.'),
           h('div', { class: 'row' },
-            h('button', { class: 'btn', onClick: () => addSamples(S.classesOfYear(S.termOf(todayStr()).year)).catch(showError) }, '모든 반에 예시 학생 넣기'),
+            h('button', { class: 'btn', onClick: () => addSamples(S.classesOfYear(S.viewTerm().year)).catch(showError) }, '모든 반에 예시 학생 넣기'),
             h('button', { class: 'btn btn-danger', onClick: () => clearAllSamples().catch(showError) }, '예시 학생 모두 지우기'))),
         h('div', { class: 'card' },
           h('h3', {}, '계정'),

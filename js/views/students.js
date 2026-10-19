@@ -14,7 +14,7 @@ export function renderStudentsTab(root, cls) {
     return;
   }
   const list = S.studentsOf(cls);
-  const term = S.termOf(todayStr());
+  const term = S.viewTerm();
   const hasSample = list.some((s) => s.sample);
   const others = S.classesOfYear(S.classYear(cls)).filter((c) => c.id !== cls.id && c.grade === cls.grade && c.room === cls.room);
 
