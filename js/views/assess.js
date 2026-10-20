@@ -1,8 +1,11 @@
-// 수행평가: 평가 만들기(학기 · 과목 · 학년), 반별 날짜, 점수 입력, 엑셀 내려받기
+// 수행평가: 평가계획서(hwpx) 불러오기, 평가 만들기(학기 · 과목 · 학년), 반별 날짜, 세부 기준 채점 · 관찰 메모, 엑셀 내려받기
 import { h, append, toast, showError, modal, confirmDialog, fmtMD, classChip } from '../ui.js';
 import * as S from '../store.js';
 import { downloadXlsx } from '../xlsx.js';
 import { go } from '../app.js';
+import { KINDS, GRADES, rubricResult, maxScore, parsePlan } from '../evalplan.js';
+import { readHwpxTables } from '../hwpx.js';
+import { openPlanEditor, planFromApp } from './planEditor.js';
 
 const view = { term: null, subject: '', openId: '', classId: '' };
 
@@ -27,7 +30,7 @@ export default function render(root) {
   if (open) {
     append(root,
       h('div', { class: 'page-head' },
-        h('h2', {}, open.title), h('span', { class: 'muted small' }, `${S.termLabel(open)} · ${open.subject} · ${open.grade}학년 · 만점 ${open.max_score}`),
+        h('h2', {}, open.title), h('span', { class: 'muted small' }, [S.termLabel(open), open.subject, `${open.grade}학년`, KINDS[open.kind || 'plain'], open.period].filter(Boolean).join(' · ')),
         h('button', { class: 'btn', onClick: () => { view.openId = ''; rerender(); } }, '← 목록'),
         h('button', { class: 'btn', onClick: () => assessmentDialog(open) }, '수정'),
         h('button', { class: 'btn', onClick: () => exportScores(open, targetClasses(open)) }, '전체 반 엑셀')),
@@ -40,14 +43,42 @@ export default function render(root) {
   append(root,
     h('div', { class: 'page-head' },
       h('h2', {}, '수행평가'), h('span', { class: 'muted' }, S.termLabel(term)), subjectTabs,
-      view.subject ? h('button', { class: 'btn btn-primary', onClick: () => assessmentDialog(null, { term, subject: view.subject }) }, '+ 새 수행평가') : null),
+      h('span', { class: 'grow' }),
+      view.subject ? h('button', { class: 'btn btn-primary', onClick: () => importPlan(term) }, '📄 평가계획서 올리기') : null,
+      view.subject ? h('button', { class: 'btn', onClick: () => editPlan(term) }, '평가계획 보기 · 고치기') : null,
+      view.subject ? h('button', { class: 'btn', onClick: () => assessmentDialog(null, { term, subject: view.subject }) }, '+ 새 수행평가') : null),
     !view.subject
       ? h('div', { class: 'empty' }, `${term.year}학년도 담당 반이 없습니다. '설정 → 시간표 · 반'에서 먼저 반을 추가하세요.`)
       : list.length
         ? list.map((a) => assessmentCard(a, () => { view.openId = a.id; view.classId = ''; rerender(); }))
-        : h('div', { class: 'empty' }, '아직 수행평가가 없습니다. 오른쪽 위 \'+ 새 수행평가\'로 만드세요.'),
-    h('p', { class: 'muted small' }, '나이스 일괄 입력용 엑셀은 나이스 양식 견본을 받은 뒤 그 양식 그대로 채워 주도록 바꿀 예정입니다. 지금은 학년 · 반 · 번호 · 이름 · 점수 엑셀을 내려받습니다.'));
+        : h('div', { class: 'empty' }, "아직 수행평가가 없습니다. 학기 초에 만든 평가계획서(hwpx)를 '📄 평가계획서 올리기'로 넣으면 평가와 채점 기준이 한 번에 만들어집니다."),
+    h('p', { class: 'muted small' }, '평가계획서를 올리면 1 · 2학기 평가가 함께 만들어집니다(이미 있는 같은 이름 평가는 기준만 새로 바뀝니다). 나이스 수행평가 일괄 입력 양식은 내년에 추가할 예정입니다.'));
 }
+
+// 평가계획서(hwpx) 올리기 → 읽은 내용을 확인 창에서 고친 뒤 반영
+function importPlan(term) {
+  const input = h('input', { type: 'file', accept: '.hwpx' });
+  input.addEventListener('change', async () => {
+    const file = input.files[0];
+    if (!file) return;
+    try {
+      const plan = parsePlan(await readHwpxTables(file));
+      const n = plan.semesters[1].items.length + plan.semesters[2].items.length;
+      if (!n) throw new Error('평가계획서에서 수행평가 표를 찾지 못했습니다. 학교 평가계획서 양식이 맞는지 확인해 주세요. (hwp 파일이면 한글에서 hwpx 로 저장해 주세요)');
+      openPlanEditor({ plan, year: term.year, fileName: file.name });
+    } catch (err) { showError(err); }
+  });
+  input.click();
+}
+
+function editPlan(term) {
+  const grades = [...new Set(S.classesOfYear(term.year).filter((c) => c.subject === view.subject).map((c) => c.grade).filter(Boolean))].sort();
+  if (!grades.length) return toast('반의 학년이 정해지지 않았습니다.', 'error');
+  openPlanEditor({ plan: planFromApp(term.year, view.subject, grades[0]), year: term.year });
+}
+
+// 결과가 들어간 학생인가 (점수 · 등급 · 체크 · 특수 · 관찰 메모 중 하나라도)
+const hasResult = (row) => !!row && (row.score != null || !!row.grade || !!row.special || !!row.note || Object.keys(row.checks || {}).length > 0);
 
 function progressOf(a, classes) {
   let total = 0;
@@ -55,7 +86,7 @@ function progressOf(a, classes) {
   for (const c of classes) {
     for (const st of S.studentsOf(c)) {
       total++;
-      if (S.scoreOf(a.id, st.id)?.score != null) done++;
+      if (hasResult(S.scoreOf(a.id, st.id))) done++;
     }
   }
   return { total, done };
@@ -67,9 +98,11 @@ function assessmentCard(a, onOpen) {
   return h('div', { class: 'card clickable assess-card', onClick: onOpen },
     h('div', { class: 'row' },
       h('h3', { style: { margin: 0 } }, a.title),
-      h('span', { class: 'muted small' }, `${a.grade}학년 · 만점 ${a.max_score}`),
+      h('span', { class: 'badge' }, KINDS[a.kind || 'plain']),
+      h('span', { class: 'muted small' }, [`${a.grade}학년`, a.kind === 'grade' ? '' : `만점 ${maxScore(a)}`, a.period, a.area].filter(Boolean).join(' · ')),
       h('span', { class: 'grow' }),
-      h('span', { class: `badge ${total && done === total ? 'badge-ok' : ''}` }, `점수 ${done} / ${total}`)),
+      h('span', { class: `badge ${total && done === total ? 'badge-ok' : ''}` }, `입력 ${done} / ${total}`)),
+    a.standards?.length ? h('div', { class: 'muted small', style: { marginTop: '4px' } }, a.standards.join(' ')) : null,
     h('div', { class: 'row small', style: { marginTop: '8px' } }, classes.map((c) => h('span', { class: 'date-chip' },
       S.classLabel(c), ' ', a.dates?.[c.id] ? h('strong', {}, fmtMD(a.dates[c.id])) : h('span', { class: 'muted' }, '날짜 미정')))),
     a.note ? h('p', { class: 'muted small', style: { margin: '6px 0 0' } }, a.note) : null);
@@ -90,70 +123,164 @@ function scoreBoard(a) {
     scoreTable(a, cls));
 }
 
+// 채점 기준 안내 (표 위에 접어 둠)
+function rubricGuide(a) {
+  const rb = a.rubric || {};
+  if (a.kind === 'count') {
+    return h('details', { class: 'rubric-guide' }, h('summary', {}, '채점 기준 보기'),
+      h('ol', {}, (rb.elements || []).map((e) => h('li', {}, e))),
+      h('div', { class: 'small' }, [...(rb.map || []).map((m) => `${m.label} ${m.score}점`), ...(rb.specials || []).map((x) => `${x.label} ${x.score}점`)].join(' · ')));
+  }
+  if (a.kind === 'criteria' || a.kind === 'grade') {
+    return h('details', { class: 'rubric-guide' }, h('summary', {}, '채점 기준 보기'),
+      (rb.criteria || []).length ? h('ol', {}, rb.criteria.map((c) => h('li', {}, c.text, c.levels.length ? h('span', { class: 'muted' }, ` (${c.levels.join(' · ')})`) : null))) : null,
+      (rb.grades || []).map((g) => h('div', { class: 'small grade-desc' }, h('strong', {}, `${g.grade} `), g.min != null ? h('span', { class: 'muted' }, `${g.min}~${g.max} `) : null, g.desc)),
+      (rb.specials || []).length ? h('div', { class: 'small' }, rb.specials.map((x) => `${x.label} ${x.score}점`).join(' · ')) : null);
+  }
+  return null;
+}
+
+const detailOpen = new Set(); // 등급형에서 '세부 기준으로 채점' 을 켠 평가
+
 export function scoreTable(a, cls) {
   const students = S.studentsOf(cls);
   if (!students.length) {
     return h('div', { class: 'empty' }, `${S.classLabel(cls)} 학생 명단이 없습니다. `, h('a', { href: `#/class/${cls.id}/students` }, '학생 탭에서 넣기'));
   }
+  const kind = a.kind || 'plain';
+  const rb = a.rubric || {};
+  const max = maxScore(a);
   const date = h('input', {
     type: 'date', value: a.dates?.[cls.id] || '',
     onChange: (e) => S.update('assessments', a.id, { dates: { ...(a.dates || {}), [cls.id]: e.target.value || null } }).catch(showError),
   });
-  const scores = students.map((st) => S.scoreOf(a.id, st.id)?.score).filter((v) => v != null);
+  const results = students.map((st) => rubricResult(a, S.scoreOf(a.id, st.id) || {}));
+  const scores = results.map((r) => r.score).filter((v) => v != null);
   const avg = scores.length ? (scores.reduce((x, y) => x + y, 0) / scores.length).toFixed(1) : '-';
+  const dist = GRADES.map((g) => `${g} ${results.filter((r) => r.grade === g).length}`).join(' · ');
+  const done = students.filter((st) => hasResult(S.scoreOf(a.id, st.id))).length;
 
+  // 한 학생 결과 저장: 기존 값에 patch 를 합치고 점수 · 등급을 다시 계산한다
+  const save = async (st, patch) => {
+    const cur = S.scoreOf(a.id, st.id) || {};
+    const next = { checks: cur.checks || {}, special: cur.special || '', grade: cur.grade || '', note: cur.note || '', score: cur.score ?? null, ...patch };
+    if (kind !== 'plain') next.score = rubricResult(a, next).score;
+    if (!hasResult(next)) { if (S.scoreOf(a.id, st.id)) await S.remove('scores', { assessment_id: a.id, student_id: st.id }); return; }
+    await S.upsert('scores', { assessment_id: a.id, student_id: st.id, ...next }, 'assessment_id,student_id');
+  };
+  const specialSel = (st, cur) => ((rb.specials || []).length
+    ? h('select', { class: 'special-sel', value: cur.special || '', title: '결시 · 표절 등', onChange: (e) => save(st, { special: e.target.value }).catch(showError) },
+      h('option', { value: '' }, '—'), rb.specials.map((x) => h('option', { value: x.label }, `${x.label} (${x.score})`)))
+    : null);
+  const noteIn = (st, cur, i) => h('input', {
+    type: 'text', class: 'note-input', value: cur.note || '', placeholder: '관찰 메모 (과세특에 쓰입니다)', 'data-fk': `note-${a.id}-${st.id}`,
+    onChange: (e) => save(st, { note: e.target.value.trim() }).catch(showError),
+    onKeydown: (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); notes[i + 1]?.focus(); } },
+  });
+  const notes = [];
+  const showDetail = kind === 'grade' && detailOpen.has(a.id);
+
+  // 점수 입력형 (예전 방식)
+  const inputs = [];
   const commit = async (input, st) => {
     const raw = input.value.trim();
-    const cur = S.scoreOf(a.id, st.id);
-    if (raw === '') { if (cur) await S.remove('scores', { assessment_id: a.id, student_id: st.id }); return; }
+    if (raw === '') return save(st, { score: null });
     const v = Number(raw);
     if (Number.isNaN(v) || v < 0 || v > a.max_score) {
       toast(`0 ~ ${a.max_score} 사이 숫자를 입력하세요.`, 'error');
-      input.value = cur?.score ?? '';
+      input.value = S.scoreOf(a.id, st.id)?.score ?? '';
       return;
     }
-    if (cur?.score !== v) await S.upsert('scores', { assessment_id: a.id, student_id: st.id, score: v }, 'assessment_id,student_id');
+    await save(st, { score: v });
   };
-  const inputs = [];
+
+  const head = ['번호', '이름'];
+  if (kind === 'plain') head.push('점수');
+  if (kind === 'count') head.push(...(rb.elements || []).map((_, i) => '①②③④⑤⑥⑦⑧⑨⑩'[i] || i + 1), '특수', '점수');
+  if (kind === 'criteria' || showDetail) head.push(...(rb.criteria || []).map((_, i) => '①②③④⑤⑥⑦⑧⑨⑩'[i] || i + 1));
+  if (kind === 'criteria') head.push('특수', '점수');
+  if (kind === 'grade') head.push('등급');
+  head.push('관찰 메모');
+
   const rows = students.map((st, i) => {
-    const cur = S.scoreOf(a.id, st.id);
-    const input = h('input', {
-      type: 'number', min: 0, max: a.max_score, step: 'any', value: cur?.score ?? '', class: 'score-input', 'data-fk': `score-${a.id}-${st.id}`,
-      onChange: () => commit(input, st).catch(showError),
-      // Enter · ↓ 는 다음 학생, ↑ 는 앞 학생
-      onKeydown: (e) => {
-        const step = e.key === 'Enter' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
-        if (!step) return;
-        e.preventDefault();
-        const next = inputs[i + step];
-        if (next) { next.focus(); next.select(); } else input.blur();
-      },
-    });
-    inputs.push(input);
-    return h('tr', {},
-      h('td', { class: 'center' }, st.number), h('td', {}, st.name),
-      h('td', {}, input, h('span', { class: 'muted small' }, ` / ${a.max_score}`)));
+    const cur = S.scoreOf(a.id, st.id) || {};
+    const res = results[i];
+    const checks = cur.checks || {};
+    const cells = [h('td', { class: 'center' }, st.number), h('td', { class: 'nowrap' }, st.name)];
+    if (kind === 'plain') {
+      const input = h('input', {
+        type: 'number', min: 0, max: a.max_score, step: 'any', value: cur.score ?? '', class: 'score-input', 'data-fk': `score-${a.id}-${st.id}`,
+        onChange: () => commit(input, st).catch(showError),
+        // Enter · ↓ 는 다음 학생, ↑ 는 앞 학생
+        onKeydown: (e) => {
+          const step = e.key === 'Enter' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
+          if (!step) return;
+          e.preventDefault();
+          const next = inputs[i + step];
+          if (next) { next.focus(); next.select(); } else input.blur();
+        },
+      });
+      inputs.push(input);
+      cells.push(h('td', {}, input, h('span', { class: 'muted small' }, ` / ${a.max_score}`)));
+    }
+    if (kind === 'count') {
+      (rb.elements || []).forEach((el, k) => cells.push(h('td', { class: 'center' }, h('input', {
+        type: 'checkbox', title: el, checked: !!checks[k], disabled: !!cur.special,
+        onChange: (e) => { const c = { ...checks }; if (e.target.checked) c[k] = true; else delete c[k]; save(st, { checks: c }).catch(showError); },
+      }))));
+      cells.push(h('td', {}, specialSel(st, cur)), h('td', { class: 'center' }, h('strong', {}, res.score ?? '')));
+    }
+    if (kind === 'criteria' || showDetail) {
+      (rb.criteria || []).forEach((c, k) => cells.push(h('td', {}, h('select', {
+        class: 'level-sel', title: c.text, value: checks[k] != null ? String(checks[k]) : '', disabled: !!cur.special,
+        onChange: (e) => { const ch = { ...checks }; if (e.target.value === '') delete ch[k]; else ch[k] = Number(e.target.value); save(st, { checks: ch }).catch(showError); },
+      }, h('option', { value: '' }, '—'), [...c.levels].sort((x, y) => y - x).map((lv) => h('option', { value: String(lv) }, lv))))));
+    }
+    if (kind === 'criteria') cells.push(h('td', {}, specialSel(st, cur)), h('td', { class: 'center' }, h('strong', {}, res.score ?? '')));
+    if (kind === 'grade') {
+      cells.push(h('td', { class: 'nowrap' }, h('div', { class: 'grade-btns' }, GRADES.map((g) => h('button', {
+        class: `${res.grade === g ? 'on' : ''} ${cur.grade === g ? 'manual' : ''}`,
+        title: (rb.grades || []).find((x) => x.grade === g)?.desc || '',
+        onClick: () => save(st, { grade: cur.grade === g ? '' : g }).catch(showError),
+      }, g))), showDetail && res.score != null ? h('span', { class: 'muted small' }, ` ${res.score}점`) : null));
+    }
+    const ni = noteIn(st, cur, i);
+    notes.push(ni);
+    cells.push(h('td', { class: 'note-cell' }, ni));
+    return h('tr', {}, cells);
   });
+
   return h('div', { class: 'card' },
     h('div', { class: 'row', style: { marginBottom: '10px' } },
       classChip(cls, S.classLabel(cls)),
       h('label', { class: 'inline small' }, '평가일', date),
-      h('span', { class: 'muted small' }, `입력 ${scores.length}/${students.length}명 · 평균 ${avg}`),
+      h('span', { class: 'muted small' }, kind === 'grade' ? `입력 ${done}/${students.length}명 · ${dist}` : `입력 ${done}/${students.length}명 · 평균 ${avg}${max ? ` / ${max}` : ''}`),
       h('span', { class: 'grow' }),
+      kind === 'grade' && (rb.criteria || []).length
+        ? h('label', { class: 'inline small' }, h('input', { type: 'checkbox', checked: showDetail, onChange: (e) => { if (e.target.checked) detailOpen.add(a.id); else detailOpen.delete(a.id); go(location.hash.slice(2)); } }), '세부 기준으로 채점')
+        : null,
       h('button', { class: 'btn btn-sm', onClick: () => exportScores(a, [cls]) }, '이 반 엑셀')),
-    h('table', { class: 'table score-table' },
-      h('thead', {}, h('tr', {}, h('th', { style: { width: '60px' } }, '번호'), h('th', {}, '이름'), h('th', {}, '점수'))),
-      h('tbody', {}, rows)),
-    h('p', { class: 'muted small', style: { margin: '8px 0 0' } }, 'Enter 또는 ↓ 를 누르면 다음 학생으로 넘어갑니다. 칸을 비우면 점수가 지워집니다.'));
+    rubricGuide(a),
+    h('div', { class: 'table-wrap' }, h('table', { class: 'table score-table' },
+      h('thead', {}, h('tr', {}, head.map((t, k) => h('th', { title: kind === 'count' && k >= 2 && k < 2 + (rb.elements || []).length ? rb.elements[k - 2] : (rb.criteria || [])[k - 2]?.text || '' }, t)))),
+      h('tbody', {}, rows))),
+    h('p', { class: 'muted small', style: { margin: '8px 0 0' } },
+      kind === 'grade' ? '등급 버튼을 누르면 정해지고, 한 번 더 누르면 지워집니다. 관찰 메모는 과세특 화면에 모여 초안 재료가 됩니다.'
+        : kind === 'plain' ? 'Enter 또는 ↓ 를 누르면 다음 학생으로 넘어갑니다. 칸을 비우면 점수가 지워집니다.'
+          : '요소에 체크하거나 수준을 고르면 점수가 자동으로 계산됩니다. 관찰 메모는 과세특 초안 재료가 됩니다.'));
 }
 
 async function exportScores(a, classes) {
-  const rows = [['학년', '반', '번호', '이름', '점수']];
+  const rows = [['학년', '반', '번호', '이름', '점수', '등급', '관찰 메모']];
   for (const c of classes) {
-    for (const st of S.studentsOf(c)) rows.push([c.grade, c.room, st.number, st.name, S.scoreOf(a.id, st.id)?.score ?? '']);
+    for (const st of S.studentsOf(c)) {
+      const cur = S.scoreOf(a.id, st.id) || {};
+      const r = rubricResult(a, cur);
+      rows.push([c.grade, c.room, st.number, st.name, r.score ?? '', r.grade || '', cur.note || '']);
+    }
   }
   const who = classes.length === 1 ? S.classLabel(classes[0]) : `${a.grade}학년 전체`;
-  try { await downloadXlsx(`${a.title}-${who}.xlsx`, rows, '점수'); } catch (err) { showError(err); }
+  try { await downloadXlsx(`${a.title}-${who}.xlsx`, rows, '결과'); } catch (err) { showError(err); }
 }
 
 // 수행평가 만들기 · 고치기

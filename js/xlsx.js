@@ -2,6 +2,9 @@
 const SRC = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
 let loading = null;
 
+// 다른 모듈(hwpx 읽기)도 SheetJS 의 압축 풀기를 빌려 쓴다
+export const loadXLSX = () => load();
+
 function load() {
   if (window.XLSX) return Promise.resolve(window.XLSX);
   loading ||= new Promise((resolve, reject) => {
