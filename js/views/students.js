@@ -43,7 +43,7 @@ export function renderStudentsTab(root, cls) {
       h('span', { class: 'grow' }),
       h('button', { class: 'btn', onClick: () => addDialog(cls) }, '+ 학생 추가'),
       h('button', { class: 'btn', onClick: () => pasteDialog(cls) }, '여러 명 붙여넣기'),
-      h('button', { class: 'btn', onClick: () => neisImport(cls) }, '나이스 명렬표(엑셀) 올리기'),
+      h('button', { class: 'btn', onClick: () => neisImport(cls) }, '나이스 엑셀로 명단 넣기'),
       hasSample
         ? h('button', { class: 'btn btn-danger', onClick: () => clearSamples(cls) }, '예시 학생 지우기')
         : (list.length ? null : h('button', { class: 'btn', onClick: () => addSamples([cls]) }, '예시 학생 5명 넣기'))),
@@ -51,7 +51,7 @@ export function renderStudentsTab(root, cls) {
       ? h('div', { class: 'table-wrap' }, h('table', { class: 'table student-table' },
         h('thead', {}, h('tr', {}, ['번호', '이름', '성별', `스티커(${term.semester}학기)`, '메모', ''].map((t) => h('th', {}, t)))),
         h('tbody', {}, rows)))
-      : h('div', { class: 'empty' }, '아직 학생이 없습니다. 위 버튼으로 직접 넣거나, 나이스에서 내려받은 명렬표 엑셀을 올리세요.'),
+      : h('div', { class: 'empty' }, '아직 학생이 없습니다. 위 버튼으로 직접 넣거나, 나이스에서 내려받은 명렬표 · 과세특 일괄입력 양식 엑셀을 올리세요.'),
     h('p', { class: 'muted small' }, '성별은 조 편성에서 고르게 나눌 때 씁니다(비워 둬도 됩니다). 명단은 학년도 · 학년 · 반마다 하나라서 같은 반의 다른 과목 수업과 함께 씁니다.'));
 }
 
@@ -142,26 +142,31 @@ async function applyRoster(cls, rows, removeMissing) {
   toast(`추가 ${added}명 · 바뀜 ${changed}명${removed ? ` · 지움 ${removed}명` : ''}`, 'ok');
 }
 
-// 나이스 명렬표: '번호'와 '성명(이름)' 칸이 있는 줄을 제목 줄로 보고 그 아래를 읽는다.
+// 나이스 엑셀(명렬표 · 과세특 일괄입력 양식): '번호'(또는 '반/번호')와 '성명(이름)' 칸이 있는 줄을 제목 줄로 보고 그 아래를 읽는다.
+// 학생개인번호 같은 다른 칸은 저장하지 않는다.
 // '학년' · '반' 칸이 있으면 이 반 학생만 고른다.
 export function parseRoster(rows, cls) {
   const isNum = (v) => /^\d{1,3}$/.test(v);
-  const hi = rows.findIndex((r) => r.some((v) => /^(번호|번)$/.test(v)) && r.some((v) => /^(성명|이름|학생명)$/.test(v)));
+  const NUM = /^(번호|번|반\/번호)$/;
+  const hi = rows.findIndex((r) => r.some((v) => NUM.test(v)) && r.some((v) => /^(성명|이름|학생명)$/.test(v)));
   if (hi < 0) return null;
   const head = rows[hi];
   const col = (re) => head.findIndex((v) => re.test(v));
-  const cNum = col(/^(번호|번)$/);
+  const cNum = col(NUM);
   const cName = col(/^(성명|이름|학생명)$/);
   const cGender = col(/^성별$/);
   const cGrade = col(/^학년$/);
   const cRoom = col(/^반$/);
   const out = [];
   for (const r of rows.slice(hi + 1)) {
-    if (!isNum(r[cNum] || '') || !r[cName]) continue;
+    // 나이스 과세특 양식은 '반/번호' 칸에 '1/12' 처럼 들어 있다
+    const [roomPart, numPart] = String(r[cNum] || '').includes('/') ? String(r[cNum]).split('/').map((v) => v.trim()) : [null, r[cNum]];
+    if (!isNum(numPart || '') || !r[cName]) continue;
+    if (roomPart != null && isNum(roomPart) && Number(roomPart) !== cls.room) continue;
     if (cGrade >= 0 && isNum(r[cGrade]) && Number(r[cGrade]) !== cls.grade) continue;
     if (cRoom >= 0 && isNum(r[cRoom]) && Number(r[cRoom]) !== cls.room) continue;
     const g = cGender >= 0 ? r[cGender] : '';
-    out.push({ number: Number(r[cNum]), name: r[cName], gender: /^남/.test(g) ? 'M' : /^여/.test(g) ? 'F' : undefined });
+    out.push({ number: Number(numPart), name: r[cName], gender: /^남/.test(g) ? 'M' : /^여/.test(g) ? 'F' : undefined });
   }
   return out;
 }
@@ -173,15 +178,15 @@ function neisImport(cls) {
     if (!file) return;
     try {
       const rows = parseRoster(await readRows(file), cls);
-      if (!rows) throw new Error("'번호'와 '성명' 칸을 찾지 못했습니다. 나이스에서 내려받은 명렬표가 맞는지 확인해 주세요.");
+      if (!rows) throw new Error("'번호'(또는 '반/번호')와 '성명' 칸을 찾지 못했습니다. 나이스에서 내려받은 명렬표나 과세특 일괄입력 양식이 맞는지 확인해 주세요.");
       if (!rows.length) throw new Error(`${S.classLabel(cls)} 학생을 찾지 못했습니다.`);
       const missing = S.studentsOf(cls).filter((s) => !rows.some((r) => r.number === s.number));
       const del = h('input', { type: 'checkbox' });
-      modal('명렬표 확인', [
+      modal('명단 확인', [
         h('p', {}, `'${file.name}'에서 ${S.classLabel(cls)} 학생 ${rows.length}명을 찾았습니다.`),
         h('div', { class: 'picker-list', style: { maxHeight: '260px' } }, rows.map((r) => h('div', { class: 'small', style: { padding: '4px 12px' } },
           `${r.number}. ${r.name}${r.gender ? ` (${GENDER[r.gender]})` : ''}`))),
-        missing.length ? h('label', { class: 'inline' }, del, `명렬표에 없는 학생 ${missing.length}명 지우기 (전학 등)`) : null,
+        missing.length ? h('label', { class: 'inline' }, del, `파일에 없는 학생 ${missing.length}명 지우기 (전학 등)`) : null,
         h('p', { class: 'muted small' }, '번호가 같은 학생은 이름 · 성별을 새로 바꾸고, 메모 · 점수 · 스티커는 그대로 둡니다.'),
       ], [
         { label: '취소' },

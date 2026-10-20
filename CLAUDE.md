@@ -42,9 +42,11 @@ serve.py            캐시 끈 로컬 서버 → http://localhost:5500
 - 모든 테이블을 드라이브 `진도관리/진도관리-데이터.json` **한 파일**에 저장합니다. 수업 자료 파일은 `진도관리/수업 자료/` 폴더에 둡니다.
 - 테이블: classes, timetable_slots, timetable_changes, lessons, materials, lesson_materials, days_off, settings, units, class_notes, folders,
   students, student_notes, assessments, scores, groupings, group_rules, stickers, events, gcal_map
-- **학생**: year · grade · room · number · name · gender('M'|'F'|'') · sample(예시 학생). 반-과목이 아니라 학년도+학년+반 단위라 국어 · 독서 반이 같은 명단을 씀(`studentsOf(cls)`). 나이스 명렬표는 `parseRoster()` 가 '번호' + '성명/이름' 칸이 있는 줄을 제목 줄로 보고 읽음(학년 · 반 칸이 있으면 그 반만). **실제 나이스 파일로는 아직 확인 안 함.**
+- **학생**: year · grade · room · number · name · gender('M'|'F'|'') · sample(예시 학생). 반-과목이 아니라 학년도+학년+반 단위라 국어 · 독서 반이 같은 명단을 씀(`studentsOf(cls)`). 나이스 엑셀은 `parseRoster()` 가 '번호' 또는 '반/번호'(예: '1/12') + '성명/이름' 칸이 있는 줄을 제목 줄로 보고 읽음(학년 · 반 칸이 있으면 그 반만). **실제 나이스 과세특 일괄입력 양식으로 확인함(2026-10-20, 25명).** 학생개인번호는 저장하지 않음.
 - **수행평가**: assessments(year · semester · subject · grade · title · max_score · dates{반id: 날짜} · note), scores(assessment_id+student_id). 나이스 일괄 입력 양식 채우기는 사용자가 양식 견본을 주면 만들 것(지금은 학년 · 반 · 번호 · 이름 · 점수 xlsx).
 - **조 편성**: groupings(class_id · name · date · groups[[학생id]] · leaders{조번호: 학생id}), group_rules(학년도+학년+반, a<b, type together|apart). 저장 전 결과는 groups.js 의 states(메모리)에만 있음.
+- **나이스 과세특 일괄입력 양식**(2026-10-20 사용자 파일로 확인): 시트 하나(이름 = 과목명), 1행 제목 `학년도 | 학기 | 학년 | 반/번호 | 학생개인번호 | 성명 | 과목명 | 세부능력 및 특기사항`, 한 반씩, 모든 칸 텍스트 서식('@'). 과세특 탭 '나이스 양식에 채우기'(`fillNeisForm`)가 올린 양식의 세특 칸에만 초안을 넣어 `원래이름_초안채움.xlsx` 로 내려줌(학년도 · 학년 · 반 · 번호로 찾고 이름이 같을 때만). 실제 파일 · 학생 이름은 저장소에 두지 말 것.
+- 수행평가 나이스 양식: 사용자가 이번 학기는 1학년 자유학기라 **내년에** 하기로 함.
 - **과세특 초안**: seteuk(student_id · year · subject · text). 칸을 벗어날 때(change) 저장, 저장 전 글은 seteuk.js 의 drafts. 글자 수와 나이스 방식 바이트(한글 3, 영문 · 숫자 · 공백 1, 줄바꿈 2)를 보여 줌(한도는 강제하지 않음).
 - **반 메모 · 학생 메모 날짜**: class_notes.date · student_notes.date ('YYYY-MM-DD', 기본 오늘). 예전 반 메모는 `noteDate()` 가 created_at 을 로컬 날짜로 바꿔 씀. 학생 표의 메모 칸에 '📝 메모 쓰기' 버튼 + 최근 메모(날짜).
 - **칭찬 스티커**: stickers(class_id · student_id · date · reason · n). 학기마다 셈. 이유 버튼은 settings.sticker_reasons.

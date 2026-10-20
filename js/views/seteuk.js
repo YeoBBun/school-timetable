@@ -1,10 +1,10 @@
 // 과세특(교과 세부능력 및 특기사항) 쓰기: 학생 한 명의 메모 · 수행평가 · 칭찬 스티커 · 조 활동 · 배운 단원을 모아 보고 옆에서 초안을 쓴다
-import { h, append, toast, showError, fmtMD, todayStr } from '../ui.js';
+import { h, append, toast, showError, modal, fmtMD, todayStr } from '../ui.js';
 import * as S from '../store.js';
 import { go } from '../app.js';
 import { studentDialog } from './students.js';
 import { noteDate } from './records.js';
-import { downloadXlsx } from '../xlsx.js';
+import { downloadXlsx, openWorkbook, saveWorkbook } from '../xlsx.js';
 
 const picked = new Map(); // 반 id → 보고 있는 학생 id
 const opts = { allSubjects: false };
@@ -68,6 +68,7 @@ export function renderSeteukTab(root, cls) {
       h('strong', {}, `${year}학년도 ${cls.subject} 과세특`),
       h('span', { class: 'muted small' }, '학생을 고르면 그 학생의 기록을 모아 보여 줍니다.'),
       h('span', { class: 'grow' }),
+      h('button', { class: 'btn btn-primary', onClick: () => fillNeisForm(cls), title: '나이스에서 내려받은 과세특 일괄입력 양식을 올리면 초안을 채워 내려줍니다' }, '나이스 양식에 채우기'),
       h('button', { class: 'btn', onClick: () => exportDrafts(cls) }, '초안 모아 엑셀로')),
     h('div', { class: 'seteuk-cols' }, list, profile(sel, cls, students)));
 }
@@ -218,3 +219,58 @@ async function exportDrafts(cls) {
   }
   try { await downloadXlsx(`${S.classLabel(cls)}-${cls.subject}-과세특-${todayStr()}.xlsx`, rows, '과세특'); } catch (err) { showError(err); }
 }
+
+// 나이스 과세특 일괄입력 양식 채우기: 나이스에서 받은 빈 양식을 올리면 '세부능력 및 특기사항' 칸에만 초안을 넣어 내려준다.
+// 다른 칸(학년도 · 학기 · 반/번호 · 학생개인번호 · 성명 · 과목명)과 시트 이름 · 줄 순서는 그대로 둔다.
+// 학생은 학년도 · 학년 · 반 · 번호로 찾고, 이름이 앱의 명단과 같을 때만 채운다.
+function fillNeisForm(cls) {
+  const input = h('input', { type: 'file', accept: '.xlsx,.xls' });
+  input.addEventListener('change', async () => {
+    const file = input.files[0];
+    if (!file) return;
+    try {
+      const { X, wb } = await openWorkbook(file);
+      const res = { filled: 0, empty: [], unmatched: [] };
+      let found = false;
+      for (const sheetName of wb.SheetNames) {
+        const ws = wb.Sheets[sheetName];
+        if (!ws['!ref']) continue;
+        const start = X.utils.decode_range(ws['!ref']).s;
+        const rows = X.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '', blankrows: true }).map((r) => r.map((v) => String(v ?? '').trim()));
+        const hi = rows.findIndex((r) => r.some((v) => /세부능력/.test(v)) && r.some((v) => /^(성명|이름)$/.test(v)));
+        if (hi < 0) continue;
+        found = true;
+        const head = rows[hi];
+        const col = (re) => head.findIndex((v) => re.test(v));
+        const c = { year: col(/^학년도$/), grade: col(/^학년$/), rn: col(/^(반\/번호|번호)$/), room: col(/^반$/), name: col(/^(성명|이름)$/), subject: col(/^과목명?$/), text: col(/세부능력/) };
+        rows.slice(hi + 1).forEach((r, i) => {
+          const name = r[c.name];
+          if (!name) return;
+          let room = c.room >= 0 ? Number(r[c.room]) : cls.room;
+          let num = Number(r[c.rn]);
+          if (r[c.rn]?.includes('/')) [room, num] = r[c.rn].split('/').map((v) => Number(v.trim()));
+          const year = (c.year >= 0 && Number(r[c.year])) || S.classYear(cls);
+          const grade = (c.grade >= 0 && Number(r[c.grade])) || cls.grade;
+          const subject = (c.subject >= 0 && r[c.subject]) || cls.subject;
+          const label = `${room}반 ${num}번`;
+          const st = S.data.students.find((s) => s.year === year && s.grade === grade && s.room === room && s.number === num);
+          if (!st || st.name.replace(/\s/g, '') !== name.replace(/\s/g, '')) { res.unmatched.push(label); return; }
+          const text = seteukOf(st, year, subject)?.text || '';
+          if (!text) { res.empty.push(label); return; }
+          ws[X.utils.encode_cell({ r: start.r + hi + 1 + i, c: start.c + c.text })] = { t: 's', v: text, z: '@' };
+          res.filled++;
+        });
+      }
+      if (!found) throw new Error("'성명'과 '세부능력 및 특기사항' 칸을 찾지 못했습니다. 나이스에서 내려받은 과세특 일괄입력 양식이 맞는지 확인해 주세요.");
+      if (res.filled) saveWorkbook(X, wb, `${file.name.replace(/\.xlsx?$/i, '')}_초안채움.xlsx`);
+      modal('나이스 양식 채우기', [
+        h('p', {}, res.filled ? `${res.filled}명의 초안을 채운 파일을 내려받았습니다.` : '채울 초안이 없어 파일을 만들지 않았습니다.'),
+        res.empty.length ? h('p', { class: 'small' }, `초안이 없어 비워 둔 학생 ${res.empty.length}명: ${res.empty.join(', ')}`) : null,
+        res.unmatched.length ? h('p', { class: 'small warn-text' }, `앱 명단과 번호 · 이름이 맞지 않아 건너뛴 학생 ${res.unmatched.length}명: ${res.unmatched.join(', ')} — 학생 탭에서 이 양식으로 명단을 다시 넣으면 맞춰집니다.`) : null,
+        h('p', { class: 'muted small' }, '나이스에 올리기 전에 엑셀에서 한 번 열어 내용을 확인하세요. 양식의 다른 칸은 바꾸지 않았습니다.'),
+      ], [{ label: '닫기' }]);
+    } catch (err) { showError(err); }
+  });
+  input.click();
+}
+
