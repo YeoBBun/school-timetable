@@ -259,3 +259,8 @@ async function start() {
 }
 
 start();
+
+// 휴대폰에서 '앱으로 설치' 할 수 있게 (https · localhost 에서만)
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
