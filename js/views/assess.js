@@ -1,7 +1,7 @@
 // 수행평가: 평가계획서(hwpx) 불러오기, 평가 만들기(학기 · 과목 · 학년), 반별 날짜, 세부 기준 채점 · 관찰 메모, 엑셀 내려받기
 import { h, append, toast, showError, modal, confirmDialog, fmtMD, classChip } from '../ui.js';
 import * as S from '../store.js';
-import { downloadXlsx } from '../xlsx.js';
+import { downloadGradebook, readGradebook, describeChange, hasResult } from '../gradebook.js';
 import { go } from '../app.js';
 import { KINDS, GRADES, rubricResult, maxScore, parsePlan } from '../evalplan.js';
 import { readHwpxTables } from '../hwpx.js';
@@ -33,7 +33,8 @@ export default function render(root) {
         h('h2', {}, open.title), h('span', { class: 'muted small' }, [S.termLabel(open), open.subject, `${open.grade}학년`, KINDS[open.kind || 'plain'], open.period].filter(Boolean).join(' · ')),
         h('button', { class: 'btn', onClick: () => { view.openId = ''; rerender(); } }, '← 목록'),
         h('button', { class: 'btn', onClick: () => assessmentDialog(open) }, '수정'),
-        h('button', { class: 'btn', onClick: () => exportScores(open, targetClasses(open)) }, '전체 반 엑셀')),
+        h('button', { class: 'btn', onClick: () => downloadGradebook(open, targetClasses(open)).catch(showError) }, '📥 채점용 엑셀 (전체 반)'),
+        h('button', { class: 'btn btn-primary', onClick: () => uploadGradebook(open, targetClasses(open)) }, '📤 채점한 엑셀 올리기')),
       scoreBoard(open));
     return;
   }
@@ -78,7 +79,6 @@ function editPlan(term) {
 }
 
 // 결과가 들어간 학생인가 (점수 · 등급 · 체크 · 특수 · 관찰 메모 중 하나라도)
-const hasResult = (row) => !!row && (row.score != null || !!row.grade || !!row.special || !!row.note || Object.keys(row.checks || {}).length > 0);
 
 function progressOf(a, classes) {
   let total = 0;
@@ -259,7 +259,8 @@ export function scoreTable(a, cls) {
       kind === 'grade' && (rb.criteria || []).length
         ? h('label', { class: 'inline small' }, h('input', { type: 'checkbox', checked: showDetail, onChange: (e) => { if (e.target.checked) detailOpen.add(a.id); else detailOpen.delete(a.id); go(location.hash.slice(2)); } }), '세부 기준으로 채점')
         : null,
-      h('button', { class: 'btn btn-sm', onClick: () => exportScores(a, [cls]) }, '이 반 엑셀')),
+      h('button', { class: 'btn btn-sm', onClick: () => downloadGradebook(a, [cls]).catch(showError) }, '📥 채점용 엑셀'),
+      h('button', { class: 'btn btn-sm', onClick: () => uploadGradebook(a, [cls]) }, '📤 올리기')),
     rubricGuide(a),
     h('div', { class: 'table-wrap' }, h('table', { class: 'table score-table' },
       h('thead', {}, h('tr', {}, head.map((t, k) => h('th', { title: kind === 'count' && k >= 2 && k < 2 + (rb.elements || []).length ? rb.elements[k - 2] : (rb.criteria || [])[k - 2]?.text || '' }, t)))),
@@ -270,17 +271,36 @@ export function scoreTable(a, cls) {
           : '요소에 체크하거나 수준을 고르면 점수가 자동으로 계산됩니다. 관찰 메모는 과세특 초안 재료가 됩니다.'));
 }
 
-async function exportScores(a, classes) {
-  const rows = [['학년', '반', '번호', '이름', '점수', '등급', '관찰 메모']];
-  for (const c of classes) {
-    for (const st of S.studentsOf(c)) {
-      const cur = S.scoreOf(a.id, st.id) || {};
-      const r = rubricResult(a, cur);
-      rows.push([c.grade, c.room, st.number, st.name, r.score ?? '', r.grade || '', cur.note || '']);
-    }
-  }
-  const who = classes.length === 1 ? S.classLabel(classes[0]) : `${a.grade}학년 전체`;
-  try { await downloadXlsx(`${a.title}-${who}.xlsx`, rows, '결과'); } catch (err) { showError(err); }
+// 채점한 엑셀 올리기 → 바뀌는 내용 미리보기 → 반영
+function uploadGradebook(a, classes) {
+  const input = h('input', { type: 'file', accept: '.xlsx,.xls' });
+  input.addEventListener('change', async () => {
+    const file = input.files[0];
+    if (!file) return;
+    let res;
+    try { res = await readGradebook(a, classes, file); } catch (err) { showError(err); return; }
+    if (!res.sheets) { toast(`이 평가의 반 시트를 찾지 못했습니다. '📥 채점용 엑셀'로 받은 파일인지 확인하세요.`, 'error'); return; }
+    const added = res.changes.filter((c) => c.isNew).length;
+    const list = (title, items, cls = '') => (items.length ? h('details', { open: items.length <= 10 }, h('summary', { class: cls }, `${title} ${items.length}`), h('ul', { class: 'small' }, items.slice(0, 100).map((t) => h('li', {}, t)))) : null);
+    modal('채점한 엑셀 올리기', [
+      h('p', {}, h('strong', {}, `새로 들어감 ${added}명 · 바뀜 ${res.changes.length - added}명`), h('span', { class: 'muted' }, ` · 그대로 ${res.same}명`)),
+      list('바뀌는 학생', res.changes.map((c) => `${S.classLabel(c.cls)} ${c.st.number}번 ${c.st.name}: ${c.isNew ? '새로 · ' : ''}${describeChange(a, c)}`)),
+      list('⚠️ 넣지 않는 값 (목록에 없는 값)', res.errors, 'warn-text'),
+      list('⚠️ 번호 · 이름이 명단과 달라 건너뛴 줄', res.unknown, 'warn-text'),
+      res.skipped.length ? h('p', { class: 'muted small' }, `반을 알 수 없어 건너뛴 시트: ${res.skipped.join(', ')}`) : null,
+      h('p', { class: 'muted small' }, '엑셀의 빈칸은 앱에 있던 값을 그대로 둡니다. 점수 · 등급은 앱의 채점 기준으로 다시 계산합니다.'),
+    ], [
+      { label: '취소' },
+      res.changes.length ? {
+        label: `반영 (${res.changes.length}명)`, primary: true,
+        onClick: async () => {
+          for (const c of res.changes) await S.upsert('scores', { assessment_id: a.id, student_id: c.st.id, ...c.next }, 'assessment_id,student_id');
+          toast(`${res.changes.length}명 결과를 넣었습니다.`, 'ok');
+        },
+      } : null,
+    ].filter(Boolean), { wide: true });
+  });
+  input.click();
 }
 
 // 수행평가 만들기 · 고치기
