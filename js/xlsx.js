@@ -23,9 +23,9 @@ export async function openWorkbook(file) {
   return { X, wb: X.read(await file.arrayBuffer(), { type: 'array', cellNF: true }) };
 }
 
-// patchSheet(시트 순서, xml) 를 주면 저장 전에 시트 XML 을 고친다 (SheetJS 무료판이 못 쓰는 목록 고르기 · 틀 고정용).
-// 이때 엑셀이 열 때 수식을 다시 계산하게 한다.
-export function saveWorkbook(X, wb, filename, patchSheet) {
+// 워크북 → xlsx Blob. patchSheet(시트 순서, xml) 를 주면 저장 전에 시트 XML 을 고친다
+// (SheetJS 무료판이 못 쓰는 목록 고르기 · 틀 고정용). 이때 엑셀이 열 때 수식을 다시 계산하게 한다.
+export function workbookBlob(X, wb, patchSheet) {
   let data = X.write(wb, { type: 'array', bookType: 'xlsx' });
   if (patchSheet) {
     const zip = X.CFB.read(new Uint8Array(data), { type: 'array' });
@@ -39,13 +39,20 @@ export function saveWorkbook(X, wb, filename, patchSheet) {
     edit('xl/workbook.xml', (xml) => (xml.includes('<calcPr') ? xml.replace(/<calcPr\b/, '<calcPr fullCalcOnLoad="1"') : xml.replace('</workbook>', '<calcPr fullCalcOnLoad="1"/></workbook>')));
     data = X.CFB.write(zip, { fileType: 'zip', type: 'array' });
   }
-  const blob = new Blob([data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  return new Blob([data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
+export function downloadBlob(blob, filename) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = filename;
   document.body.append(a);
   a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+}
+
+export function saveWorkbook(X, wb, filename, patchSheet) {
+  downloadBlob(workbookBlob(X, wb, patchSheet), filename);
 }
 
 // 첫 번째 시트를 [[칸, 칸, ...], ...] 로 (합친 칸 · 빈 줄 포함, 글자는 앞뒤 공백 제거)
@@ -61,11 +68,5 @@ export async function downloadXlsx(filename, rows, sheetName = 'Sheet1') {
   const X = await load();
   const wb = X.utils.book_new();
   X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(rows), sheetName);
-  const blob = new Blob([X.write(wb, { type: 'array', bookType: 'xlsx' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  document.body.append(a);
-  a.click();
-  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+  downloadBlob(workbookBlob(X, wb), filename);
 }
