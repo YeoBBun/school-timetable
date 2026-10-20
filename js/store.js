@@ -8,7 +8,7 @@ import { todayStr, addDays } from './ui.js';
 // curriculum_items · item_materials 는 예전 버전(차시 목록) 데이터를 보존하려고 남겨 둔다
 export const TABLES = ['classes', 'curriculum_items', 'timetable_slots', 'timetable_changes', 'lessons', 'materials', 'item_materials', 'lesson_materials', 'days_off', 'settings',
   'units', 'class_notes', 'folders',
-  'students', 'student_notes', 'assessments', 'scores', 'groupings', 'group_rules', 'stickers', 'events', 'gcal_map', 'seteuk'];
+  'students', 'student_notes', 'assessments', 'scores', 'groupings', 'group_rules', 'stickers', 'events', 'gcal_map', 'seteuk', 'eval_plans'];
 const DATA_FILE = '진도관리-데이터.json';
 const POLL_MS = 30_000;
 const TOMB_KEEP_MS = 90 * 24 * 3600 * 1000;
@@ -29,7 +29,7 @@ const DEFAULTS = {
   units: { sort: 0 },
   class_notes: { done: false },
   students: { gender: '', level: '', sample: false },
-  assessments: { max_score: 100, dates: {} },
+  assessments: { max_score: 100, dates: {}, kind: 'plain', rubric: {}, standards: [], period: '', area: '' },
   stickers: { n: 1, reason: '' },
   events: { note: '', class_id: null },
 };
@@ -631,6 +631,9 @@ export function studentsOf(cls) {
 }
 export const studentLabel = (s) => (s ? `${s.number}. ${s.name}` : '(삭제된 학생)');
 export const notesOfStudent = (id) => data.student_notes.filter((n) => n.student_id === id).sort((a, b) => b.date.localeCompare(a.date) || b.created_at.localeCompare(a.created_at));
+
+// ---- 평가계획 (학년도 · 학기 · 과목 · 학년마다 하나: 학기 단위 성취수준 A~E) ----
+export const planOf = (term, subject, grade) => data.eval_plans.find((p) => sameTerm(p, term) && p.subject === subject && p.grade === grade);
 
 // ---- 수행평가 ----
 export function assessmentsOf(cls, term) {

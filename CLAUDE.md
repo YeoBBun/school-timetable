@@ -29,7 +29,10 @@ js/views/groups.js  조 편성(makeGroups: 무작위 시작 + 자리 바꾸기 �
 js/views/stickers.js  칭찬 스티커 탭 + TV 보드(ui.tvOverlay)
 js/views/schedule.js  일정 메뉴, 구글 캘린더 연결 카드
 js/calendar.js      앱 → 구글 '진도관리' 캘린더 한 방향 동기화(gcal_map 테이블, 이 기기에서 바꾼 것만)
-js/xlsx.js          SheetJS(cdnjs xlsx 0.18.5)를 필요할 때만 불러 엑셀 읽기 · 쓰기
+js/xlsx.js          SheetJS(cdnjs xlsx 0.18.5)를 필요할 때만 불러 엑셀 읽기 · 쓰기 (loadXLSX 는 hwpx 압축 풀기에도 씀)
+js/hwpx.js          한글 hwpx 의 표 → 칸 격자(rowAddr/colAddr · span, 메모(hp:ctrl) 글은 뺌)
+js/evalplan.js      평가계획서 해석(parsePlan), 채점 계산(rubricResult · maxScore), '~함' 문장 바꾸기(toNoun), 확인 창용 한 줄 형식
+js/views/planEditor.js  평가계획 확인 · 고치기 창(올린 직후 · 저장된 계획 고치기 둘 다)
 js/views/search.js  찾기(기록 · 자료 · 메모 검색, 단원별 보기)
 js/views/materials.js  자료 화면 + 업로드/첨부 공용 함수
 js/views/timetable.js  설정의 '시간표 · 반' 탭 (보는 학기의 시간표 · 그 학년도 반, 다른 학기 시간표 가져오기)
@@ -41,13 +44,15 @@ serve.py            캐시 끈 로컬 서버 → http://localhost:5500
 ### 데이터 저장 방식 (store.js)
 - 모든 테이블을 드라이브 `진도관리/진도관리-데이터.json` **한 파일**에 저장합니다. 수업 자료 파일은 `진도관리/수업 자료/` 폴더에 둡니다.
 - 테이블: classes, timetable_slots, timetable_changes, lessons, materials, lesson_materials, days_off, settings, units, class_notes, folders,
-  students, student_notes, assessments, scores, groupings, group_rules, stickers, events, gcal_map
+  students, student_notes, assessments, scores, groupings, group_rules, stickers, events, gcal_map, seteuk, eval_plans
 - **학생**: year · grade · room · number · name · gender('M'|'F'|'') · sample(예시 학생). 반-과목이 아니라 학년도+학년+반 단위라 국어 · 독서 반이 같은 명단을 씀(`studentsOf(cls)`). 나이스 엑셀은 `parseRoster()` 가 '번호' 또는 '반/번호'(예: '1/12') + '성명/이름' 칸이 있는 줄을 제목 줄로 보고 읽음(학년 · 반 칸이 있으면 그 반만). **실제 나이스 과세특 일괄입력 양식으로 확인함(2026-10-20, 25명).** 학생개인번호는 저장하지 않음.
-- **수행평가**: assessments(year · semester · subject · grade · title · max_score · dates{반id: 날짜} · note), scores(assessment_id+student_id). 나이스 일괄 입력 양식 채우기는 사용자가 양식 견본을 주면 만들 것(지금은 학년 · 반 · 번호 · 이름 · 점수 xlsx).
+- **수행평가**: assessments(year · semester · subject · grade · title · max_score · dates{반id: 날짜} · note · period · area · standards[] · points · weight · **kind** · **rubric**), scores(assessment_id+student_id · score · grade · checks{기준 번호: true|점수} · special · **note(관찰 메모)**). kind: plain(점수 입력) · count(요소 개수 → 점수 표) · criteria(기준별 수준 점수 합) · grade(등급 A~E + 등급별 성취수준 기술, 세부 기준 합으로 등급 자동). 결과 계산은 `rubricResult()`.
+- **평가계획서(hwpx)**(2026-10-20 사용자 학교 양식으로 확인): 수행평가 메뉴 '📄 평가계획서 올리기' → `readHwpxTables` → `parsePlan` → 확인 · 고치기 창 → '앱에 반영'. 표 머리글로 찾음: '학기 단위 성취수준'(→ eval_plans.levels A~E), '평가방법 및 내용'+'성취기준'(연간 계획: 수행 · 과정평가만), '세부평가기준'+'배점'(점수형: ①… 요소면 count, 아니면 criteria, 결시 · 표절은 specials), '등급'+'성취수준기술'(등급형). 다시 올리면 이름 → 학기 · 시기 · 방식이 같은 기존 평가를 고침(앱에서 고친 이름 유지, 결과 유지). 이번 학기(1학년 2학기)는 자유학기 과정평가라 점수보다 **등급 · 관찰 메모** 중심(사용자 요청). 학교 양식은 해마다 거의 같다고 함.
+- **eval_plans**: year · semester · subject · grade · levels{A~E: 학기 단위 성취수준}. `S.planOf(term, subject, grade)`.
 - **조 편성**: groupings(class_id · name · date · groups[[학생id]] · leaders{조번호: 학생id}), group_rules(학년도+학년+반, a<b, type together|apart). 저장 전 결과는 groups.js 의 states(메모리)에만 있음.
 - **나이스 과세특 일괄입력 양식**(2026-10-20 사용자 파일로 확인): 시트 하나(이름 = 과목명), 1행 제목 `학년도 | 학기 | 학년 | 반/번호 | 학생개인번호 | 성명 | 과목명 | 세부능력 및 특기사항`, 한 반씩, 모든 칸 텍스트 서식('@'). 과세특 탭 '나이스 양식에 채우기'(`fillNeisForm`)가 올린 양식의 세특 칸에만 초안을 넣어 `원래이름_초안채움.xlsx` 로 내려줌(학년도 · 학년 · 반 · 번호로 찾고 이름이 같을 때만). 실제 파일 · 학생 이름은 저장소에 두지 말 것.
 - 수행평가 나이스 양식: 사용자가 이번 학기는 1학년 자유학기라 **내년에** 하기로 함.
-- **과세특 초안**: seteuk(student_id · year · subject · text). 칸을 벗어날 때(change) 저장, 저장 전 글은 seteuk.js 의 drafts. 글자 수와 나이스 방식 바이트(한글 3, 영문 · 숫자 · 공백 1, 줄바꿈 2)를 보여 줌(한도는 강제하지 않음).
+- **과세특 초안**: seteuk(student_id · year · subject · text · levels{학기: A~E}). '✨ 초안 재료 넣기'(`draftMaterial`): 평가마다 "'평가 이름'에서 (등급의 성취수준 기술 또는 충족한 기준을 '~함' 체로). (관찰 메모)." + 그 해 이 과목 학생 메모. AI 가 쓰는 게 아니라 규칙으로 조립(사용자 동의). 칸을 벗어날 때(change) 저장, 저장 전 글은 seteuk.js 의 drafts. 글자 수와 나이스 방식 바이트(한글 3, 영문 · 숫자 · 공백 1, 줄바꿈 2)를 보여 줌(한도는 강제하지 않음).
 - **반 메모 · 학생 메모 날짜**: class_notes.date · student_notes.date ('YYYY-MM-DD', 기본 오늘). 예전 반 메모는 `noteDate()` 가 created_at 을 로컬 날짜로 바꿔 씀. 학생 표의 메모 칸에 '📝 메모 쓰기' 버튼 + 최근 메모(날짜).
 - **칭찬 스티커**: stickers(class_id · student_id · date · reason · n). 학기마다 셈. 이유 버튼은 settings.sticker_reasons.
 - **일정**: events(date · title · class_id · note) + 수행평가 날짜 → `S.agenda(from, to)`. 구글 캘린더는 scope `calendar.app.created`(앱이 만든 캘린더만), settings.gcal_id. 사용자가 콘솔에서 Calendar API 사용 + 범위 추가를 해야 함(아직 안 함).

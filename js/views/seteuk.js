@@ -5,6 +5,7 @@ import { go } from '../app.js';
 import { studentDialog } from './students.js';
 import { noteDate } from './records.js';
 import { downloadXlsx, openWorkbook, saveWorkbook } from '../xlsx.js';
+import { GRADES, rubricResult, maxScore, toNoun } from '../evalplan.js';
 
 const picked = new Map(); // 반 id → 보고 있는 학생 id
 const opts = { allSubjects: false };
@@ -55,12 +56,12 @@ export function renderSeteukTab(root, cls) {
 
   const list = h('div', { class: 'card seteuk-list' }, students.map((s) => {
     const d = gather(s, cls);
-    const scored = d.assessments.filter((a) => S.scoreOf(a.id, s.id)?.score != null).length;
+    const scored = d.assessments.filter((a) => S.scoreOf(a.id, s.id)).length;
     const draft = seteukOf(s, year, cls.subject)?.text || '';
     return h('button', { class: `seteuk-student ${s === sel ? 'active' : ''}`, onClick: () => pick(s) },
       h('div', { class: 'row' }, h('strong', {}, `${s.number}. ${s.name}`), h('span', { class: 'grow' }),
         draft ? h('span', { class: 'badge badge-ok' }, `초안 ${charCount(draft)}자`) : null),
-      h('div', { class: 'small muted' }, `메모 ${d.notes.length} · 점수 ${scored}/${d.assessments.length} · ⭐ ${d.stickers.reduce((n, x) => n + (x.n || 1), 0)}`));
+      h('div', { class: 'small muted' }, `메모 ${d.notes.length} · 평가 ${scored}/${d.assessments.length} · ⭐ ${d.stickers.reduce((n, x) => n + (x.n || 1), 0)}`));
   }));
 
   append(root,
@@ -86,7 +87,7 @@ function profile(s, cls, students) {
         h('button', { class: 'btn', disabled: i === 0, onClick: () => move(-1) }, '◀ 앞 학생'),
         h('button', { class: 'btn', disabled: i === students.length - 1, onClick: () => move(1) }, '다음 학생 ▶'))),
     h('div', { class: 'seteuk-grid' },
-      h('div', {}, draftCard(s, cls, d), assessCard(s, cls, d), lessonsCard(cls, d)),
+      h('div', {}, draftCard(s, cls, d), levelCard(s, cls, d), assessCard(s, cls, d), lessonsCard(cls, d)),
       h('div', {}, notesCard(s, cls, d), stickersCard(d), groupsCard(d))));
 }
 
@@ -118,9 +119,18 @@ function draftCard(s, cls, d) {
     } catch (err) { showError(err); }
   };
   update();
+  // 수행평가 결과(등급의 성취수준 문장 · 충족한 기준) + 관찰 메모 + 학생 메모를 문장으로 모아 초안 뒤에 붙인다
+  const addMaterial = () => {
+    const text = draftMaterial(s, cls, d);
+    if (!text) return toast('넣을 재료가 없습니다. 수행평가 결과 · 관찰 메모 · 학생 메모를 먼저 입력하세요.');
+    ta.value = ta.value.trim() ? `${ta.value.trim()}\n${text}` : text;
+    drafts.set(key, ta.value);
+    save();
+  };
   return h('div', { class: 'card' },
     h('div', { class: 'row', style: { marginBottom: '8px' } },
       h('h3', { style: { margin: 0 } }, '세특 초안'), state, h('span', { class: 'grow' }), counter,
+      h('button', { class: 'btn btn-sm btn-primary', title: '수행평가 결과 · 관찰 메모 · 학생 메모를 문장으로 모아 초안 뒤에 붙입니다', onClick: addMaterial }, '✨ 초안 재료 넣기'),
       h('button', { class: 'btn btn-sm', onClick: () => save() }, '저장'),
       h('button', {
         class: 'btn btn-sm',
@@ -130,25 +140,71 @@ function draftCard(s, cls, d) {
     h('p', { class: 'muted small', style: { margin: '6px 0 0' } }, '바이트는 나이스 방식(한글 3, 영문 · 숫자 · 공백 1, 줄바꿈 2)으로 셉니다. 글자 수 한도는 학교 지침을 확인하세요.'));
 }
 
-function assessCard(s, cls, d) {
-  const avg = (a) => {
-    const v = S.studentsOf(cls).map((x) => S.scoreOf(a.id, x.id)?.score).filter((x) => x != null);
-    return v.length ? (v.reduce((x, y) => x + y, 0) / v.length).toFixed(1) : '-';
+const endDot = (t) => (/[.!?]$/.test(t.trim()) ? t.trim() : `${t.trim()}.`);
+const cleanTitle = (t) => t.replace(/\s*\([^)]*점\)\s*/g, '').trim();
+
+// 초안 재료: 평가마다 "'평가 이름'에서 (등급의 성취수준 문장 또는 충족한 기준). (관찰 메모)." + 이 과목 학생 메모
+function draftMaterial(s, cls, d) {
+  const parts = [];
+  for (const a of d.assessments) {
+    const cur = S.scoreOf(a.id, s.id);
+    if (!cur || cur.special) continue;
+    const r = rubricResult(a, cur);
+    const bits = [];
+    const gd = a.kind === 'grade' && r.grade ? (a.rubric?.grades || []).find((g) => g.grade === r.grade)?.desc : '';
+    if (gd) bits.push(toNoun(gd));
+    else if (r.met.length) bits.push(`${r.met.map((t) => toNoun(t).replace(/\.$/, '')).join(', ')}.`);
+    if (cur.note) bits.push(endDot(cur.note));
+    if (bits.length) parts.push(`'${cleanTitle(a.title)}'에서 ${bits.join(' ')}`);
+  }
+  const memos = S.notesOfStudent(s.id).filter((n) => S.termOf(n.date).year === d.year && (!n.subject || n.subject === d.subject)).reverse().map((n) => endDot(n.text));
+  return [...parts, ...memos].join(' ');
+}
+
+// 학기 단위 성취수준: 평가계획의 A~E 중 이 학생 수준을 골라 두면 그 문장을 보고 초안에 넣을 수 있다
+function levelCard(s, cls, d) {
+  const row = seteukOf(s, d.year, d.subject);
+  const chosen = row?.levels || {};
+  const plans = [1, 2].map((semester) => ({ semester, plan: S.planOf({ year: d.year, semester }, d.subject, cls.grade) })).filter((x) => x.plan && Object.keys(x.plan.levels || {}).length);
+  if (!plans.length) return null;
+  const pick = (sem, g) => S.upsert('seteuk', { student_id: s.id, year: d.year, subject: d.subject, levels: { ...chosen, [sem]: chosen[sem] === g ? '' : g } }, 'student_id,year,subject').catch(showError);
+  const insert = (text) => {
+    const key = `${s.id}|${d.year}|${d.subject}`;
+    const cur = drafts.has(key) ? drafts.get(key) : row?.text || '';
+    S.upsert('seteuk', { student_id: s.id, year: d.year, subject: d.subject, text: cur.trim() ? `${cur.trim()}\n${text}` : text }, 'student_id,year,subject').then(() => drafts.delete(key), showError);
   };
+  return h('div', { class: 'card' },
+    h('h3', {}, '학기 단위 성취수준'),
+    plans.map(({ semester, plan }) => {
+      const g = chosen[semester];
+      return h('div', { class: 'level-pick' },
+        h('div', { class: 'row' }, h('strong', { class: 'small' }, `${semester}학기`),
+          h('div', { class: 'grade-btns' }, GRADES.filter((x) => plan.levels[x]).map((x) => h('button', { class: g === x ? 'on' : '', title: plan.levels[x], onClick: () => pick(semester, x) }, x)))),
+        g ? h('div', { class: 'small level-text' }, toNoun(plan.levels[g]), ' ', h('button', { class: 'btn btn-sm', onClick: () => insert(toNoun(plan.levels[g])) }, '초안에 넣기')) : h('p', { class: 'muted small', style: { margin: '4px 0 0' } }, '수준을 고르면 평가계획의 문장이 보입니다.'));
+    }));
+}
+
+function assessCard(s, cls, d) {
   return h('div', { class: 'card' },
     h('h3', {}, `수행평가 (${d.assessments.length})`),
     d.assessments.length
-      ? h('table', { class: 'table' },
-        h('thead', {}, h('tr', {}, ['학기', '평가', '평가일', '점수', '반 평균'].map((t) => h('th', {}, t)))),
-        h('tbody', {}, d.assessments.map((a) => {
-          const sc = S.scoreOf(a.id, s.id)?.score;
-          return h('tr', {},
-            h('td', {}, `${a.semester}학기`), h('td', {}, a.title),
-            h('td', { class: 'small' }, a.dates?.[cls.id] ? fmtMD(a.dates[cls.id]) : '-'),
-            h('td', {}, sc != null ? h('strong', {}, `${sc}`) : h('span', { class: 'muted' }, '미입력'), h('span', { class: 'muted small' }, ` / ${a.max_score}`)),
-            h('td', { class: 'small muted' }, avg(a)));
-        })))
-      : h('p', { class: 'muted small' }, '올해 이 과목 수행평가가 없습니다.'));
+      ? d.assessments.map((a) => {
+        const cur = S.scoreOf(a.id, s.id) || {};
+        const r = rubricResult(a, cur);
+        const gd = a.kind === 'grade' && r.grade ? (a.rubric?.grades || []).find((g) => g.grade === r.grade)?.desc : '';
+        const result = cur.special ? h('span', { class: 'badge badge-warn' }, cur.special)
+          : a.kind === 'grade' ? (r.grade ? h('span', { class: 'badge badge-info' }, `등급 ${r.grade}`) : h('span', { class: 'muted small' }, '미입력'))
+            : r.score != null ? h('span', {}, h('strong', {}, r.score), h('span', { class: 'muted small' }, ` / ${maxScore(a)}`)) : h('span', { class: 'muted small' }, '미입력');
+        return h('div', { class: 'assess-result' },
+          h('div', { class: 'row' },
+            h('span', { class: 'muted small' }, `${a.semester}학기`), h('strong', { class: 'grow' }, cleanTitle(a.title)),
+            a.dates?.[cls.id] ? h('span', { class: 'muted small' }, fmtMD(a.dates[cls.id])) : null, result),
+          r.met.length ? h('div', { class: 'small' }, '✓ ', r.met.map((t) => toNoun(t).replace(/\.$/, '')).join(' · ')) : null,
+          gd ? h('div', { class: 'small level-text' }, toNoun(gd)) : null,
+          cur.note ? h('div', { class: 'small' }, '👀 ', cur.note) : null,
+          a.standards?.length ? h('div', { class: 'muted small' }, a.standards.join(' ')) : null);
+      })
+      : h('p', { class: 'muted small' }, '올해 이 과목 수행평가가 없습니다. 수행평가 메뉴에서 평가계획서를 올리면 만들어집니다.'));
 }
 
 function notesCard(s, cls, d) {

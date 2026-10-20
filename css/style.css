@@ -448,3 +448,32 @@ tr.row-on td { background: var(--primary-soft); }
 .term-row.on { background: var(--primary-soft); }
 .last-lesson { font-size: 12px; color: var(--muted); padding: 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recs .rec + .rec { margin-top: 4px; border-top-color: transparent; border-radius: 6px; }
+
+/* 평가계획 · 세부 기준 채점 */
+.rubric-guide { margin-bottom: 10px; background: var(--surface-2); border-radius: 8px; padding: 8px 12px; font-size: 13px; }
+.rubric-guide summary { cursor: pointer; font-weight: 600; }
+.rubric-guide ol { margin: 6px 0; padding-left: 20px; }
+.grade-desc { padding: 2px 0; }
+.score-table th { white-space: nowrap; }
+.score-table td { vertical-align: middle; }
+.special-sel, .level-sel { padding: 3px 4px !important; font-size: 12px; max-width: 120px; }
+.note-cell { min-width: 220px; width: 40%; }
+.note-input { width: 100%; }
+.grade-btns { display: inline-flex; gap: 3px; }
+.grade-btns button { width: 30px; height: 30px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-weight: 700; }
+.grade-btns button.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+.grade-btns button.on:not(.manual) { background: var(--primary-soft); color: var(--primary); }
+.plan-editor { display: flex; flex-direction: column; gap: 10px; }
+.plan-levels summary { cursor: pointer; font-weight: 600; }
+.level-row { flex-direction: row; align-items: flex-start; gap: 8px; margin-top: 6px; }
+.level-row textarea { min-height: 50px; font-size: 13px; }
+.plan-item { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.plan-item.off { opacity: .55; }
+.plan-title { font-weight: 700; }
+.plan-rubric { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.plan-rubric textarea { font-size: 13px; min-height: 70px; }
+.assess-result { padding: 8px 0; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 3px; }
+.assess-result:first-of-type { border-top: none; }
+.level-text { background: #f2f6ff; border-radius: 6px; padding: 6px 8px; line-height: 1.6; }
+.level-pick { padding: 6px 0; border-top: 1px solid var(--border); }
+.level-pick:first-of-type { border-top: none; }
