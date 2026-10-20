@@ -446,3 +446,5 @@ tr.row-on td { background: var(--primary-soft); }
 .past-mats summary { cursor: pointer; font-size: 13px; font-weight: 600; color: #7a5600; }
 .term-row { display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-top: 1px solid var(--border); border-radius: 6px; }
 .term-row.on { background: var(--primary-soft); }
+.last-lesson { font-size: 12px; color: var(--muted); padding: 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recs .rec + .rec { margin-top: 4px; border-top-color: transparent; border-radius: 6px; }

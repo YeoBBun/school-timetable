@@ -7,7 +7,6 @@ import { addRecord, recordDialog, copyDialog, noteDialog, noteItem } from './rec
 import { openStickerBoard } from './stickers.js';
 import { eventDialog } from './schedule.js';
 
-const RECENT = 6; // 반마다 보여 줄 최근 기록 수
 let date = S.view.date; // 보는 날짜 (store 의 view.date 와 같게 둔다 · 학기 고르기가 이걸 옮긴다)
 const drafts = new Map(); // 반 id → 입력 중인 글
 const unitPick = new Map(); // '반 id|학년도|학기' → 고른 단원 id
@@ -99,7 +98,9 @@ function classColumn(cls, term, slots) {
   const unitId = unitPick.has(key) ? unitPick.get(key) : (S.lastUnitOf(cls.id, term) || '');
   const periods = slots.filter((s) => s.class_id === cls.id).map((s) => s.period);
   const lessons = S.lessonsOfClass(cls.id);
-  const recent = lessons.slice(-RECENT).reverse();
+  // 이 날 기록만 보여 주고, 그 전 수업은 한 줄로만 (어디서 이어 갈지 알 수 있게)
+  const dayLessons = lessons.filter((l) => l.date === date);
+  const last = [...lessons].reverse().find((l) => l.date < date);
   const notes = S.notesOfClass(cls.id).filter((n) => !n.done);
 
   const input = h('input', {
@@ -127,22 +128,18 @@ function classColumn(cls, term, slots) {
     onDrop: (e) => { e.preventDefault(); e.currentTarget.classList.remove('over'); if (e.dataTransfer.files.length) attachDialog(l, [...e.dataTransfer.files]); },
   });
 
-  const recRows = [];
-  recent.forEach((l, i) => {
-    // 단원이 바뀌는 곳에 단원 이름을 한 번씩 보여 준다
-    const prev = recent[i - 1];
-    if (l.unit_id && (!prev || prev.unit_id !== l.unit_id)) recRows.push(h('div', { class: 'rec-unit' }, S.unitById(l.unit_id)?.name || ''));
+  const recRows = dayLessons.map((l) => {
     const mats = S.materialsOfLesson(l.id);
-    recRows.push(h('div', { class: `rec ${l.date === date ? 'on-date' : ''}`, ...dropTarget(l) },
+    return h('div', { class: 'rec on-date', ...dropTarget(l) },
       h('div', { class: 'rec-head' },
-        h('span', { class: 'rec-date' }, `${fmtMD(l.date)}${l.period ? ` · ${l.period}교시` : ''}`),
+        h('span', { class: 'rec-date' }, `${l.period ? `${l.period}교시` : '교시 없음'}${l.unit_id ? ` · ${S.unitById(l.unit_id)?.name || ''}` : ''}`),
         h('span', { class: 'grow' }),
         h('span', { class: 'rec-actions' },
           h('button', { class: 'icon-btn', title: '자료 붙이기 (파일을 여기로 끌어다 놓아도 됩니다)', onClick: () => attachDialog(l) }, '📎'),
           h('button', { class: 'icon-btn', title: '다른 반에도 쓰기', onClick: () => copyDialog(l) }, '⇉'),
           h('button', { class: 'icon-btn', title: '수정 · 삭제', onClick: () => recordDialog(l) }, '✎'))),
       h('div', { class: 'rec-text', onClick: () => recordDialog(l) }, S.lessonText(l) || h('span', { class: 'muted' }, '(내용 없음)')),
-      mats.length ? h('div', { class: 'mat-list' }, mats.map(matLink)) : null));
+      mats.length ? h('div', { class: 'mat-list' }, mats.map(matLink)) : null);
   });
 
   return h('div', { class: 'card class-col', style: { '--c': cls.color } },
@@ -154,14 +151,14 @@ function classColumn(cls, term, slots) {
           h('span', { class: 'col-title-go' }, '반 관리 ›')))),
     upcomingOf(cls),
     h('div', { class: 'col-unit' }, unitSelect(term, cls.subject, unitId, (v) => { unitPick.set(key, v); go('today'); }, { emptyLabel: '— 단원 고르기 —' })),
+    last ? h('div', { class: 'last-lesson', title: '지난 수업 (전체 기록은 반 관리 → 수업 기록)' }, `지난 수업 ${fmtMD(last.date)} · ${S.lessonText(last) || '(내용 없음)'}`) : null,
     input,
+    recRows.length ? h('div', { class: 'recs' }, recRows) : null,
     h('div', { class: 'col-actions' },
       h('a', { class: 'btn col-btn', href: `#/class/${cls.id}/groups` }, '👥 조 편성'),
       h('button', { class: 'btn col-btn', onClick: () => openStickerBoard(cls) }, '⭐ 칭찬 스티커'),
       h('button', { class: 'btn col-btn', onClick: () => noteDialog(cls) }, '📝 반 메모')),
-    notes.length ? h('div', { class: 'notes' }, notes.map((n) => noteItem(n, cls))) : null,
-    recRows.length ? h('div', { class: 'recs' }, recRows) : h('p', { class: 'muted small', style: { margin: '6px 2px' } }, '아직 기록이 없습니다.'),
-    lessons.length > RECENT ? h('a', { class: 'small more', href: `#/class/${cls.id}` }, `전체 기록 ${lessons.length}개 보기 →`) : null);
+    notes.length ? h('div', { class: 'notes' }, notes.map((n) => noteItem(n, cls))) : null);
 }
 
 // ---- 이날 시간표 바꾸기: 교시마다 '주간 시간표대로 / 수업 없음 / 다른 반'을 고른다 ----
