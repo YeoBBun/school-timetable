@@ -50,7 +50,7 @@ function calendarCard() {
     h('h3', {}, '구글 캘린더'),
     on
       ? [
-        h('p', { class: 'small', style: { marginTop: 0 } }, "일정과 수행평가 날짜를 내 구글 캘린더의 '진도관리' 캘린더에 자동으로 보냅니다. 휴대폰 캘린더 앱에서도 보입니다."),
+        h('p', { class: 'small', style: { marginTop: 0 } }, "일정과 수행평가 날짜를 내 구글 캘린더의 '수업관리' 캘린더에 자동으로 보냅니다. 휴대폰 캘린더 앱에서도 보입니다."),
         G.hasCalendar() ? null : h('div', { class: 'banner' }, '이 기기에서는 아직 캘린더 권한을 받지 않았습니다. 아래 버튼을 눌러 주세요.'),
         h('div', { class: 'row' },
           h('button', { class: 'btn', onClick: G.hasCalendar() ? () => Cal.syncNow().then(() => toast('맞췄습니다.', 'ok')).catch(showError) : connect }, G.hasCalendar() ? '지금 맞추기' : '캘린더 권한 받기'),
@@ -58,7 +58,7 @@ function calendarCard() {
           h('button', { class: 'btn btn-danger', onClick: () => Cal.disconnect().catch(showError) }, '연결 끊기')),
       ]
       : [
-        h('p', { class: 'small', style: { marginTop: 0 } }, "연결하면 구글 캘린더에 '진도관리' 캘린더가 새로 생기고, 일정과 수행평가 날짜가 자동으로 들어갑니다. 앱은 이 캘린더만 다룰 수 있고 다른 캘린더는 볼 수 없습니다."),
+        h('p', { class: 'small', style: { marginTop: 0 } }, "연결하면 구글 캘린더에 '수업관리' 캘린더가 새로 생기고, 일정과 수행평가 날짜가 자동으로 들어갑니다. 앱은 이 캘린더만 다룰 수 있고 다른 캘린더는 볼 수 없습니다."),
         h('details', { class: 'small' }, h('summary', {}, '처음 한 번 해야 할 일 (구글 클라우드 콘솔)'),
           h('ol', {},
             h('li', {}, 'console.cloud.google.com → 진도관리 프로젝트'),

@@ -185,7 +185,7 @@ export async function downloadGradebook(a, classes) {
   downloadBlob(await buildGradebook(a, classes), `${fileTitle(a, classes)}.xlsx`);
 }
 
-// ---- 구글 시트 채점표: 드라이브 진도관리/채점표/2026학년도 2학기/ 에 평가마다 하나 (assessments.sheet_id) ----
+// ---- 구글 시트 채점표: 드라이브 수업관리/채점표/2026학년도 2학기/ 에 평가마다 하나 (assessments.sheet_id) ----
 // 시트가 휴지통에 있거나 없어졌으면 null
 export async function gradeSheetId(a) {
   if (!a.sheet_id) return null;

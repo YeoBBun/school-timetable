@@ -477,3 +477,27 @@ tr.row-on td { background: var(--primary-soft); }
 .level-text { background: #f2f6ff; border-radius: 6px; padding: 6px 8px; line-height: 1.6; }
 .level-pick { padding: 6px 0; border-top: 1px solid var(--border); }
 .level-pick:first-of-type { border-top: none; }
+
+/* 휴대폰: 위에 앱 이름 · 학기 · 저장 상태, 메뉴는 아래 탭 */
+@media (max-width: 700px) {
+  .layout { height: 100dvh; grid-template-rows: auto 1fr; }
+  .sidebar { padding: 8px 12px; padding-top: max(8px, env(safe-area-inset-top)); gap: 10px; overflow: visible; }
+  .brand { font-size: 16px; }
+  .term-picker select { max-width: 150px; }
+  .side-footer { display: flex; margin-left: auto; padding: 0; }
+  .side-footer #user-email { display: none; }
+  .nav {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; display: flex; gap: 0;
+    background: #1f2633; border-top: 1px solid #2c3546; padding-bottom: env(safe-area-inset-bottom);
+  }
+  .nav a { flex: 1; text-align: center; padding: 12px 2px; border-radius: 0; font-size: 12px; white-space: nowrap; }
+  .nav a.active { background: transparent; color: #fff; box-shadow: inset 0 3px 0 var(--primary); }
+  .view { padding: 14px 12px calc(76px + env(safe-area-inset-bottom)); }
+  #toasts { left: 12px; right: 12px; bottom: calc(64px + env(safe-area-inset-bottom)); }
+  .toast { max-width: none; }
+  .page-head { gap: 8px; margin-bottom: 14px; }
+  .btn { padding: 9px 14px; }
+  .class-cols { grid-template-columns: 1fr; }
+  .modal-overlay { padding: 0; align-items: flex-end; }
+  .modal, .modal-wide { width: 100%; max-height: 92dvh; border-radius: 14px 14px 0 0; }
+}
