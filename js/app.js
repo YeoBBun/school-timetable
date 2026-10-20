@@ -44,7 +44,7 @@ const SYNC_LABEL = { on: '드라이브에 저장됨', saving: '저장 중…', e
 
 function syncBadge() {
   const st = S.sync.status;
-  const badge = h('div', { class: `sync sync-${st}`, id: st === 'auth' ? null : 'sync-badge', title: S.sync.message || '구글 드라이브의 진도관리 폴더에 자동으로 저장됩니다' },
+  const badge = h('div', { class: `sync sync-${st}`, id: st === 'auth' ? null : 'sync-badge', title: S.sync.message || '구글 드라이브의 수업관리 폴더에 자동으로 저장됩니다' },
     h('span', { class: 'dot' }), SYNC_LABEL[st] || st);
   if (st !== 'auth') return badge;
   return h('div', { id: 'sync-badge' }, badge,
@@ -66,7 +66,7 @@ function shell() {
   const nav = h('nav', { class: 'nav' },
     ROUTES.filter((r) => r.nav !== false).map((r) => h('a', { href: `#/${r.path}`, class: r.path === (route.parent || route.path) ? 'active' : '' }, r.label)));
   const side = h('aside', { class: 'sidebar' },
-    h('div', { class: 'brand' }, '진도관리'),
+    h('div', { class: 'brand' }, '수업관리'),
     h('div', { class: 'term-picker', id: 'term-picker' }),
     nav,
     h('div', { class: 'side-footer' },
@@ -183,11 +183,11 @@ function loginView(message) {
   }, '구글 계정으로 로그인');
   app.replaceChildren(h('div', { class: 'login-wrap' },
     h('div', { class: 'login-card' },
-      h('h1', {}, '진도관리'),
+      h('h1', {}, '수업관리'),
       h('p', { class: 'muted' }, '반별 진도 · 시간표 · 수업 자료'),
       message ? h('div', { class: 'banner', style: { margin: 0 } }, message) : null,
       btn,
-      h('p', { class: 'muted small' }, "모든 기록과 수업 자료는 내 구글 드라이브의 '진도관리' 폴더에 저장됩니다. 앱은 그 폴더에만 접근합니다."))));
+      h('p', { class: 'muted small' }, "모든 기록과 수업 자료는 내 구글 드라이브의 '수업관리' 폴더에 저장됩니다. 앱은 그 폴더에만 접근합니다."))));
   viewEl = null;
 }
 

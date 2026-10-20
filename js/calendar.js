@@ -1,9 +1,9 @@
-// 구글 캘린더로 보내기: 앱의 일정 · 수행평가 날짜를 내 구글 캘린더의 '진도관리' 캘린더에 맞춘다(앱 → 캘린더 한 방향)
+// 구글 캘린더로 보내기: 앱의 일정 · 수행평가 날짜를 내 구글 캘린더의 '수업관리' 캘린더에 맞춘다(앱 → 캘린더 한 방향)
 import * as G from './google.js';
 import * as S from './store.js';
 import { toast, todayStr, addDays } from './ui.js';
 
-const CAL_NAME = '진도관리';
+const CAL_NAME = '수업관리';
 let timer = null;
 let running = false;
 let again = false;
@@ -20,7 +20,7 @@ export async function connect() {
     await S.upsert('settings', { gcal_id: id }, 'user_id');
   }
   await syncNow();
-  toast("구글 캘린더의 '진도관리' 캘린더에 일정을 보냈습니다.", 'ok');
+  toast("구글 캘린더의 '수업관리' 캘린더에 일정을 보냈습니다.", 'ok');
 }
 
 // 연결만 끊는다 (구글 캘린더에 이미 들어간 일정은 남는다)

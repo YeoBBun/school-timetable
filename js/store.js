@@ -1,4 +1,4 @@
-// 데이터 저장소: 모든 데이터를 메모리에 두고, 구글 드라이브의 '진도관리/진도관리-데이터.json' 파일 하나에 저장한다.
+// 데이터 저장소: 모든 데이터를 메모리에 두고, 구글 드라이브의 '수업관리/수업관리-데이터.json' 파일 하나에 저장한다.
 // 다른 기기에서 바꾼 내용은 30초마다(또는 창으로 돌아올 때) 드라이브 파일을 확인해서 합친다.
 // 켤 때 기다리지 않도록 마지막 데이터를 이 PC 브라우저에 사본으로 두고(로그아웃하면 지움), 화면부터 보여 준 뒤 드라이브와 합친다.
 // 합칠 때는 항목마다 마지막으로 바뀐 시각(_u)이 더 늦은 쪽을 남기고, 지운 항목은 지운 시각(tomb)으로 기억한다.
@@ -9,7 +9,8 @@ import { todayStr, addDays } from './ui.js';
 export const TABLES = ['classes', 'curriculum_items', 'timetable_slots', 'timetable_changes', 'lessons', 'materials', 'item_materials', 'lesson_materials', 'days_off', 'settings',
   'units', 'class_notes', 'folders',
   'students', 'student_notes', 'assessments', 'scores', 'groupings', 'group_rules', 'stickers', 'events', 'gcal_map', 'seteuk', 'eval_plans'];
-const DATA_FILE = '진도관리-데이터.json';
+const DATA_FILE = '수업관리-데이터.json';
+const OLD_DATA_FILE = '진도관리-데이터.json'; // 예전 이름: 찾으면 새 이름으로 바꾼다
 const POLL_MS = 30_000;
 const TOMB_KEEP_MS = 90 * 24 * 3600 * 1000;
 const CACHE_KEY = 'jindo.cache';
@@ -100,8 +101,13 @@ function applyRemote(remote) {
 async function knownFileVersion() {
   if (!drive.fileId) return null;
   try {
-    const meta = await G.fileMeta(drive.fileId);
-    return meta.trashed ? null : meta.version;
+    let meta = await G.fileMeta(drive.fileId);
+    if (meta.trashed) return null;
+    if (meta.name === OLD_DATA_FILE) {
+      await G.renameFile(drive.fileId, DATA_FILE);
+      meta = await G.fileMeta(drive.fileId);
+    }
+    return meta.version;
   } catch (err) {
     if (err.status === 404) return null;
     throw err;
@@ -116,7 +122,12 @@ export function loadAll() {
       const folders = await G.ensureFolders();
       drive.rootId = folders.root;
       drive.materialsId = folders.materials;
-      const file = await G.findFile(DATA_FILE, drive.rootId);
+      let file = await G.findFile(DATA_FILE, drive.rootId);
+      const old = file ? null : await G.findFile(OLD_DATA_FILE, drive.rootId);
+      if (old) {
+        await G.renameFile(old.id, DATA_FILE);
+        file = { id: old.id, version: (await G.fileMeta(old.id)).version };
+      }
       drive.fileId = file?.id || null;
       version = file?.version ?? null;
     } else {

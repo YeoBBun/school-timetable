@@ -1,6 +1,6 @@
 {
-  "name": "진도관리",
-  "short_name": "진도관리",
+  "name": "수업관리",
+  "short_name": "수업관리",
   "description": "반별 수업 관리 · 시간표 · 수행평가 · 과세특",
   "lang": "ko",
   "id": "./",

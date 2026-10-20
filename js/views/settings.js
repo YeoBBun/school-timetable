@@ -51,7 +51,7 @@ function general(root) {
 
   const backup = () => {
     const json = JSON.stringify({ exported_at: new Date().toISOString(), ...S.data }, null, 2);
-    downloadText(`진도관리-백업-${todayStr()}.json`, json, 'application/json');
+    downloadText(`수업관리-백업-${todayStr()}.json`, json, 'application/json');
   };
 
   const restore = () => {
@@ -61,7 +61,7 @@ function general(root) {
       if (!file) return;
       try {
         const json = JSON.parse(await file.text());
-        if (!(json.tables || json.classes)) throw new Error('진도관리 백업 파일이 아닙니다.');
+        if (!(json.tables || json.classes)) throw new Error('수업관리 백업 파일이 아닙니다.');
         if (!await confirmDialog(`'${file.name}' 백업으로 지금 데이터를 모두 바꿀까요?\n지금 있는 기록은 사라집니다.`, { okLabel: '불러오기' })) return;
         S.importBackup(json);
         toast('백업을 불러왔습니다.', 'ok');
@@ -92,7 +92,7 @@ function general(root) {
           h('div', { class: 'row' }, h('label', {}, '하루 교시 수', periods), h('label', {}, '수업 요일', weekdays))),
         h('div', { class: 'card' },
           h('h3', {}, '데이터'),
-          h('p', { class: 'muted small', style: { marginTop: 0 } }, "모든 기록은 구글 드라이브 '진도관리' 폴더의 '진도관리-데이터.json' 파일에 자동으로 저장됩니다. 따로 백업해 두려면 아래에서 내려받으세요. (수업 자료 파일은 '수업 자료' 폴더에 있습니다)"),
+          h('p', { class: 'muted small', style: { marginTop: 0 } }, "모든 기록은 구글 드라이브 '수업관리' 폴더의 '수업관리-데이터.json' 파일에 자동으로 저장됩니다. 따로 백업해 두려면 아래에서 내려받으세요. (수업 자료 파일은 '수업 자료' 폴더에 있습니다)"),
           h('div', { class: 'row' },
             h('button', { class: 'btn', onClick: backup }, '백업 파일 내려받기'),
             h('button', { class: 'btn', onClick: restore }, '백업 파일 불러오기'),
