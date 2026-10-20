@@ -14,12 +14,28 @@ function load() {
   return loading;
 }
 
+// 원본 양식을 그대로 고쳐 쓸 때: 워크북 열기 · 내려받기
+export async function openWorkbook(file) {
+  const X = await load();
+  return { X, wb: X.read(await file.arrayBuffer(), { type: 'array', cellNF: true }) };
+}
+
+export function saveWorkbook(X, wb, filename) {
+  const blob = new Blob([X.write(wb, { type: 'array', bookType: 'xlsx' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.append(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+}
+
 // 첫 번째 시트를 [[칸, 칸, ...], ...] 로 (합친 칸 · 빈 줄 포함, 글자는 앞뒤 공백 제거)
 export async function readRows(file) {
   const X = await load();
   const wb = X.read(await file.arrayBuffer(), { type: 'array' });
   const ws = wb.Sheets[wb.SheetNames[0]];
-  return X.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' })
+  return X.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '', blankrows: true })
     .map((r) => r.map((v) => String(v ?? '').replace(/\s+/g, ' ').trim()));
 }
 
