@@ -10,6 +10,7 @@ const CAL_API = 'https://www.googleapis.com/calendar/v3';
 const TOKEN_KEY = 'jindo.google.token';
 const API = 'https://www.googleapis.com/drive/v3';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
 export const isConfigured = /\.apps\.googleusercontent\.com$/.test(GOOGLE_CLIENT_ID.trim());
@@ -217,6 +218,25 @@ export async function trashFile(fileId) {
   }
 }
 
+// 엑셀(xlsx) 내용을 구글 시트로 바꿔 만든다 (앱이 만든 파일이라 drive.file 권한으로 다시 읽을 수 있다)
+export async function createSheetFromXlsx(blob, name, parentId) {
+  const boundary = `jindo${Math.random().toString(36).slice(2)}`;
+  const meta = { name, parents: [parentId], mimeType: 'application/vnd.google-apps.spreadsheet' };
+  const body = new Blob([
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n`,
+    `--${boundary}\r\nContent-Type: ${XLSX_MIME}\r\n\r\n`, blob, `\r\n--${boundary}--`,
+  ]);
+  const res = await api(`${UPLOAD}/files?uploadType=multipart&fields=id`, { method: 'POST', headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body });
+  return (await res.json()).id;
+}
+
+// 구글 시트를 엑셀(xlsx)로 받아 읽는다
+export async function exportXlsx(fileId) {
+  const res = await api(`${API}/files/${fileId}/export?mimeType=${encodeURIComponent(XLSX_MIME)}`, { cache: 'no-store' });
+  return res.arrayBuffer();
+}
+
+export const sheetUrl = (id) => `https://docs.google.com/spreadsheets/d/${id}/edit`;
 export const fileViewUrl = (id) => `https://drive.google.com/file/d/${id}/view`;
 export const fileDownloadUrl = (id) => `https://drive.google.com/uc?export=download&id=${id}`;
 export const folderUrl = (id) => `https://drive.google.com/drive/folders/${id}`;
