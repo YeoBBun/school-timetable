@@ -23,8 +23,23 @@ export async function openWorkbook(file) {
   return { X, wb: X.read(await file.arrayBuffer(), { type: 'array', cellNF: true }) };
 }
 
-export function saveWorkbook(X, wb, filename) {
-  const blob = new Blob([X.write(wb, { type: 'array', bookType: 'xlsx' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+// patchSheet(시트 순서, xml) 를 주면 저장 전에 시트 XML 을 고친다 (SheetJS 무료판이 못 쓰는 목록 고르기 · 틀 고정용).
+// 이때 엑셀이 열 때 수식을 다시 계산하게 한다.
+export function saveWorkbook(X, wb, filename, patchSheet) {
+  let data = X.write(wb, { type: 'array', bookType: 'xlsx' });
+  if (patchSheet) {
+    const zip = X.CFB.read(new Uint8Array(data), { type: 'array' });
+    const edit = (path, fn) => {
+      const e = zip.FileIndex[zip.FullPaths.findIndex((p) => p.endsWith(`/${path}`))];
+      if (!e) return;
+      e.content = new TextEncoder().encode(fn(new TextDecoder().decode(e.content)));
+      e.size = e.content.length;
+    };
+    wb.SheetNames.forEach((_, i) => edit(`xl/worksheets/sheet${i + 1}.xml`, (xml) => patchSheet(i, xml)));
+    edit('xl/workbook.xml', (xml) => (xml.includes('<calcPr') ? xml.replace(/<calcPr\b/, '<calcPr fullCalcOnLoad="1"') : xml.replace('</workbook>', '<calcPr fullCalcOnLoad="1"/></workbook>')));
+    data = X.CFB.write(zip, { fileType: 'zip', type: 'array' });
+  }
+  const blob = new Blob([data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = filename;

@@ -29,7 +29,8 @@ js/views/groups.js  조 편성(makeGroups: 무작위 시작 + 자리 바꾸기 �
 js/views/stickers.js  칭찬 스티커 탭 + TV 보드(ui.tvOverlay)
 js/views/schedule.js  일정 메뉴, 구글 캘린더 연결 카드
 js/calendar.js      앱 → 구글 '진도관리' 캘린더 한 방향 동기화(gcal_map 테이블, 이 기기에서 바꾼 것만)
-js/xlsx.js          SheetJS(cdnjs xlsx 0.18.5)를 필요할 때만 불러 엑셀 읽기 · 쓰기 (loadXLSX 는 hwpx 압축 풀기에도 씀)
+js/xlsx.js          SheetJS(cdnjs xlsx 0.18.5)를 필요할 때만 불러 엑셀 읽기 · 쓰기 (loadXLSX 는 hwpx 압축 풀기에도 씀). saveWorkbook(…, patchSheet) 는 시트 XML 을 고쳐 목록 고르기 · 틀 고정을 넣음(무료판이 못 써서)
+js/gradebook.js     채점용 엑셀: downloadGradebook(평가, 반들) · readGradebook(평가, 반들, 파일) → 바뀔 내용 · describeChange · hasResult
 js/hwpx.js          한글 hwpx 의 표 → 칸 격자(rowAddr/colAddr · span, 메모(hp:ctrl) 글은 뺌)
 js/evalplan.js      평가계획서 해석(parsePlan), 채점 계산(rubricResult · maxScore), '~함' 문장 바꾸기(toNoun), 확인 창용 한 줄 형식
 js/views/planEditor.js  평가계획 확인 · 고치기 창(올린 직후 · 저장된 계획 고치기 둘 다)
@@ -52,6 +53,7 @@ serve.py            캐시 끈 로컬 서버 → http://localhost:5500
 - **조 편성**: groupings(class_id · name · date · groups[[학생id]] · leaders{조번호: 학생id}), group_rules(학년도+학년+반, a<b, type together|apart). 저장 전 결과는 groups.js 의 states(메모리)에만 있음.
 - **나이스 과세특 일괄입력 양식**(2026-10-20 사용자 파일로 확인): 시트 하나(이름 = 과목명), 1행 제목 `학년도 | 학기 | 학년 | 반/번호 | 학생개인번호 | 성명 | 과목명 | 세부능력 및 특기사항`, 한 반씩, 모든 칸 텍스트 서식('@'). 과세특 탭 '나이스 양식에 채우기'(`fillNeisForm`)가 올린 양식의 세특 칸에만 초안을 넣어 `원래이름_초안채움.xlsx` 로 내려줌(학년도 · 학년 · 반 · 번호로 찾고 이름이 같을 때만). 실제 파일 · 학생 이름은 저장소에 두지 말 것.
 - 수행평가 나이스 양식: 사용자가 이번 학기는 1학년 자유학기라 **내년에** 하기로 함.
+- **채점용 엑셀**(2026-10-20 사용자 요청: 엑셀이 편함 · 드롭다운 · 합계 · 평균): 평가 화면 '📥 채점용 엑셀 (전체 반)' / 반 표의 '📥 채점용 엑셀'. 첫 시트 '채점 기준'(원문 · 등급표 · 쓰는 법) + 반마다 시트(이름 = classLabel). 1행 제목(맨 오른쪽 **숨긴 칸**에 `jindo:평가id:반id`), 2행 안내, 3행 머리글, 4행부터 학생, 아래 평균 · 등급별 인원. 기준 칸은 ①② 로 시작(올릴 때 이걸로 칸을 찾음), 목록 고르기(dataValidation)와 칸 설명(prompt), 점수 · 합계 · 최종 등급은 엑셀 수식(열 때 다시 계산). 앱 값을 미리 채움(등급은 직접 고른 것만). 올리기: 번호+이름이 둘 다 맞는 학생만, **빈칸은 앱 값 유지**(요소 개수형은 그 줄에 하나라도 적혀 있으면 요소를 새로 정함), 목록 밖 값은 넣지 않고 미리보기 창에 표시, 다른 평가 파일이면 막음. 점수 · 등급은 rubricResult 로 다시 계산. 문서 속성(Custprops)은 SheetJS 가 한글을 깨뜨리고 다른 프로그램이 지워서 쓰지 않음.
 - **과세특 초안**: seteuk(student_id · year · subject · text · levels{학기: A~E}). '✨ 초안 재료 넣기'(`draftMaterial`): 평가마다 "'평가 이름'에서 (등급의 성취수준 기술 또는 충족한 기준을 '~함' 체로). (관찰 메모)." + 그 해 이 과목 학생 메모. AI 가 쓰는 게 아니라 규칙으로 조립(사용자 동의). 칸을 벗어날 때(change) 저장, 저장 전 글은 seteuk.js 의 drafts. 글자 수와 나이스 방식 바이트(한글 3, 영문 · 숫자 · 공백 1, 줄바꿈 2)를 보여 줌(한도는 강제하지 않음).
 - **반 메모 · 학생 메모 날짜**: class_notes.date · student_notes.date ('YYYY-MM-DD', 기본 오늘). 예전 반 메모는 `noteDate()` 가 created_at 을 로컬 날짜로 바꿔 씀. 학생 표의 메모 칸에 '📝 메모 쓰기' 버튼 + 최근 메모(날짜).
 - **칭찬 스티커**: stickers(class_id · student_id · date · reason · n). 학기마다 셈. 이유 버튼은 settings.sticker_reasons.
