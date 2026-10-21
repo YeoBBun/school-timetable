@@ -70,7 +70,7 @@ export function renderSeteukTab(root, cls) {
       h('strong', {}, `${term.year}학년도 ${term.semester}학기 ${cls.subject} 과세특`),
       requirementBadge(cls, term, students, (s) => seteukOf(s, term, cls.subject)),
       h('span', { class: 'grow' }),
-      h('button', { class: 'btn btn-primary', onClick: () => { aiMode.add(cls.id); go(`class/${cls.id}/seteuk`); }, title: '평가 항목마다 AI 프롬프트를 만들고, 결과를 붙여넣어 반 전체 초안을 한 번에 만듭니다' }, '🤖 AI로 반 전체 초안'),
+      h('button', { class: 'btn btn-primary btn-lg', onClick: () => { aiMode.add(cls.id); go(`class/${cls.id}/seteuk`); }, title: '단계를 따라 누르면 반 전체 과세특 초안이 만들어집니다' }, '🤖 AI로 반 전체 과세특 만들기'),
       h('button', { class: 'btn', onClick: () => fillNeisForm(cls), title: '나이스에서 내려받은 과세특 일괄입력 양식을 올리면 초안을 채워 내려줍니다' }, '나이스 양식에 채우기')),
     h('div', { class: 'seteuk-cols' }, list, profile(sel, cls, students)));
 }
