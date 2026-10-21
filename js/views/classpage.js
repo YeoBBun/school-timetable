@@ -14,7 +14,7 @@ const TABS = [
   { key: 'students', label: '학생', view: renderStudentsTab },
   { key: 'assess', label: '수행평가', view: renderClassAssess },
   { key: 'groups', label: '조 편성', view: renderGroupsTab },
-  { key: 'stickers', label: '칭찬 스티커', view: renderStickersTab },
+  { key: 'stickers', label: '칭찬 스티커', view: renderStickersTab, feature: 'stickers' },
   { key: 'seteuk', label: '과세특', view: renderSeteukTab },
 ];
 
@@ -24,13 +24,14 @@ export default function render(root, id, sub) {
     append(root, h('div', { class: 'empty' }, '반을 찾을 수 없습니다. ', h('a', { href: '#/today' }, '홈으로')));
     return;
   }
-  const tab = TABS.find((t) => t.key === sub) || TABS[0];
+  const tabs = TABS.filter((t) => !t.feature || S.feature(t.feature));
+  const tab = tabs.find((t) => t.key === sub) || tabs[0];
   const body = h('div', {});
   append(root,
     h('div', { class: 'page-head' },
       h('h2', { class: 'row' }, classChip(cls, S.classLabel(cls)), h('span', { class: 'muted small' }, [`${S.classYear(cls)}학년도`, cls.subject].filter(Boolean).join(' · '))),
       h('a', { class: 'btn', href: '#/today' }, '← 홈')),
-    h('div', { class: 'tabs' }, TABS.map((t) => h('a', { class: `tab ${t === tab ? 'active' : ''}`, href: `#/class/${cls.id}/${t.key}` }, t.label))),
+    h('div', { class: 'tabs' }, tabs.map((t) => h('a', { class: `tab ${t === tab ? 'active' : ''}`, href: `#/class/${cls.id}/${t.key}` }, t.label))),
     body);
   tab.view(body, cls);
 }

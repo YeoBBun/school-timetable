@@ -32,7 +32,7 @@ function gather(s, cls) {
   const stickers = S.data.stickers.filter((x) => x.class_id === cls.id && x.student_id === s.id && inYear(x.date))
     .sort((a, b) => b.date.localeCompare(a.date));
   const groups = S.data.groupings.filter((g) => g.class_id === cls.id && inYear(g.date))
-    .map((g) => { const gi = g.groups.findIndex((ids) => ids.includes(s.id)); return gi < 0 ? null : { g, gi, leader: g.leaders?.[gi] === s.id }; })
+    .map((g) => { const gi = g.groups.findIndex((ids) => ids.includes(s.id)); return gi < 0 ? null : { g, gi }; })
     .filter(Boolean).sort((a, b) => b.g.date.localeCompare(a.g.date));
   return { year, subject, notes, assessments, stickers, groups };
 }
@@ -61,7 +61,8 @@ export function renderSeteukTab(root, cls) {
     return h('button', { class: `seteuk-student ${s === sel ? 'active' : ''}`, onClick: () => pick(s) },
       h('div', { class: 'row' }, h('strong', {}, `${s.number}. ${s.name}`), h('span', { class: 'grow' }),
         draft ? h('span', { class: 'badge badge-ok' }, `초안 ${charCount(draft)}자`) : null),
-      h('div', { class: 'small muted' }, `메모 ${d.notes.length} · 평가 ${scored}/${d.assessments.length} · ⭐ ${d.stickers.reduce((n, x) => n + (x.n || 1), 0)}`));
+      h('div', { class: 'small muted' }, [`메모 ${d.notes.length}`, `평가 ${scored}/${d.assessments.length}`,
+        S.feature('stickers') ? `⭐ ${d.stickers.reduce((n, x) => n + (x.n || 1), 0)}` : null].filter(Boolean).join(' · ')));
   }));
 
   append(root,
@@ -88,7 +89,7 @@ function profile(s, cls, students) {
         h('button', { class: 'btn', disabled: i === students.length - 1, onClick: () => move(1) }, '다음 학생 ▶'))),
     h('div', { class: 'seteuk-grid' },
       h('div', {}, draftCard(s, cls, d), levelCard(s, cls, d), assessCard(s, cls, d), lessonsCard(cls, d)),
-      h('div', {}, notesCard(s, cls, d), stickersCard(d), groupsCard(d))));
+      h('div', {}, notesCard(s, cls, d), S.feature('stickers') ? stickersCard(d) : null, groupsCard(d))));
 }
 
 function draftCard(s, cls, d) {
@@ -242,9 +243,9 @@ function groupsCard(d) {
   return h('div', { class: 'card' },
     h('h3', {}, `조 활동 (${d.groups.length})`),
     d.groups.length
-      ? d.groups.map(({ g, gi, leader }) => h('div', { class: 'row small log-row' },
+      ? d.groups.map(({ g, gi }) => h('div', { class: 'row small log-row' },
         h('span', { class: 'muted' }, fmtMD(g.date)), h('span', {}, g.name), h('span', { class: 'grow' }),
-        h('span', {}, `${gi + 1}조`), leader ? h('span', { class: 'badge badge-warn' }, '👑 조장') : null))
+        h('span', {}, `${gi + 1}조`)))
       : h('p', { class: 'muted small' }, '저장한 조 편성이 없습니다.'));
 }
 

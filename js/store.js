@@ -5,12 +5,10 @@
 import * as G from './google.js';
 import { todayStr, addDays } from './ui.js';
 
-// curriculum_items · item_materials 는 예전 버전(차시 목록) 데이터를 보존하려고 남겨 둔다
-export const TABLES = ['classes', 'curriculum_items', 'timetable_slots', 'timetable_changes', 'lessons', 'materials', 'item_materials', 'lesson_materials', 'days_off', 'settings',
+export const TABLES = ['classes', 'timetable_slots', 'timetable_changes', 'lessons', 'materials', 'lesson_materials', 'days_off', 'settings',
   'units', 'class_notes', 'folders',
-  'students', 'student_notes', 'assessments', 'scores', 'groupings', 'group_rules', 'stickers', 'events', 'gcal_map', 'seteuk', 'eval_plans'];
+  'students', 'student_notes', 'assessments', 'scores', 'groupings', 'stickers', 'events', 'gcal_map', 'seteuk', 'eval_plans'];
 const DATA_FILE = '수업관리-데이터.json';
-const OLD_DATA_FILE = '진도관리-데이터.json'; // 예전 이름: 찾으면 새 이름으로 바꾼다
 const POLL_MS = 30_000;
 const TOMB_KEEP_MS = 90 * 24 * 3600 * 1000;
 const CACHE_KEY = 'jindo.cache';
@@ -18,18 +16,17 @@ const CACHE_MAX_AGE = 60 * 24 * 3600 * 1000; // 지운 기록(90일)보다 짧�
 
 // 기본키가 id 가 아닌 테이블
 // folders: 드라이브 폴더 위치 (key 예: 'y:2026', 's:2026:2', 'j:2026:2:국어', 'u:<단원 id>', 'p:<단원 id>:lesson')
-const KEYS = { item_materials: ['item_id', 'material_id'], lesson_materials: ['lesson_id', 'material_id'], settings: ['user_id'], folders: ['key'], scores: ['assessment_id', 'student_id'], gcal_map: ['key'], seteuk: ['student_id', 'year', 'subject'] };
+const KEYS = { lesson_materials: ['lesson_id', 'material_id'], settings: ['user_id'], folders: ['key'], scores: ['assessment_id', 'student_id'], gcal_map: ['key'], seteuk: ['student_id', 'year', 'subject'] };
 const DEFAULTS = {
   classes: { color: '#4f7cff', sort: 0 },
-  curriculum_items: { unit: '', seq: 0 },
   timetable_changes: { note: '', class_id: null },
-  lessons: { memo: '', period: null, curriculum_item_id: null },
+  lessons: { memo: '', period: null },
   materials: { kind: 'file', subject: null, unit_id: null, purpose: 'lesson' },
   days_off: { note: '' },
   settings: { periods: 7, weekdays: 5, sem2_start: '08-01' },
   units: { sort: 0 },
   class_notes: { done: false },
-  students: { gender: '', level: '', sample: false },
+  students: { gender: '' },
   assessments: { max_score: 100, dates: {}, kind: 'plain', rubric: {}, standards: [], period: '', area: '' },
   stickers: { n: 1, reason: '' },
   events: { note: '', class_id: null },
@@ -78,6 +75,7 @@ function snapshot() {
 
 function applyRemote(remote) {
   const rTables = remote?.tables || {};
+  keepOldItemTitles(rTables);
   const rTomb = remote?.tomb || {};
   for (const t of TABLES) {
     const local = new Map(data[t].map((r) => [keyOf(t, r), r]));
@@ -101,13 +99,8 @@ function applyRemote(remote) {
 async function knownFileVersion() {
   if (!drive.fileId) return null;
   try {
-    let meta = await G.fileMeta(drive.fileId);
-    if (meta.trashed) return null;
-    if (meta.name === OLD_DATA_FILE) {
-      await G.renameFile(drive.fileId, DATA_FILE);
-      meta = await G.fileMeta(drive.fileId);
-    }
-    return meta.version;
+    const meta = await G.fileMeta(drive.fileId);
+    return meta.trashed ? null : meta.version;
   } catch (err) {
     if (err.status === 404) return null;
     throw err;
@@ -122,12 +115,7 @@ export function loadAll() {
       const folders = await G.ensureFolders();
       drive.rootId = folders.root;
       drive.materialsId = folders.materials;
-      let file = await G.findFile(DATA_FILE, drive.rootId);
-      const old = file ? null : await G.findFile(OLD_DATA_FILE, drive.rootId);
-      if (old) {
-        await G.renameFile(old.id, DATA_FILE);
-        file = { id: old.id, version: (await G.fileMeta(old.id)).version };
-      }
+      const file = await G.findFile(DATA_FILE, drive.rootId);
       drive.fileId = file?.id || null;
       version = file?.version ?? null;
     } else {
@@ -144,7 +132,6 @@ export function loadAll() {
       remoteVersion = created.version;
     }
     loaded = true;
-    migrate();
     writeCache();
     emit(true);
     if (dirty) await save(); // 사본에 밀린 수정이 있으면 이어서 저장
@@ -294,6 +281,7 @@ export function clearData() {
 // 백업 파일에서 전부 되살리기 (지금 데이터를 덮어쓴다)
 export function importBackup(json) {
   const src = json?.tables || json;
+  keepOldItemTitles(src || {});
   const stamp = now();
   for (const t of TABLES) {
     for (const r of data[t]) tomb[t][keyOf(t, r)] = stamp;
@@ -326,7 +314,6 @@ function cascadeDelete(table, row, stamp) {
     del('student_notes', (r) => r.student_id === row.id);
     del('scores', (r) => r.student_id === row.id);
     del('stickers', (r) => r.student_id === row.id);
-    del('group_rules', (r) => r.a === row.id || r.b === row.id);
     del('seteuk', (r) => r.student_id === row.id);
   }
   if (table === 'assessments') del('scores', (r) => r.assessment_id === row.id);
@@ -334,14 +321,7 @@ function cascadeDelete(table, row, stamp) {
     for (const t of ['lessons', 'materials']) for (const r of data[t]) if (r.unit_id === row.id) { r.unit_id = null; r._u = stamp; }
   }
   if (table === 'lessons') del('lesson_materials', (r) => r.lesson_id === row.id);
-  if (table === 'materials') {
-    del('item_materials', (r) => r.material_id === row.id);
-    del('lesson_materials', (r) => r.material_id === row.id);
-  }
-  if (table === 'curriculum_items') {
-    del('item_materials', (r) => r.item_id === row.id);
-    for (const l of data.lessons) if (l.curriculum_item_id === row.id) { l.curriculum_item_id = null; l._u = stamp; }
-  }
+  if (table === 'materials') del('lesson_materials', (r) => r.material_id === row.id);
 }
 
 function makeRow(table, row, stamp) {
@@ -420,7 +400,6 @@ export async function reload() { emit(); }
 const koSort = (a, b) => a.localeCompare(b, 'ko', { numeric: true });
 
 export const classById = (id) => data.classes.find((c) => c.id === id);
-export const itemById = (id) => data.curriculum_items.find((i) => i.id === id);
 export const materialById = (id) => data.materials.find((m) => m.id === id);
 
 // 과목 → 학년 → 반 순 (같은 과목 반끼리 나란히 놓여 진도를 비교하기 쉽다)
@@ -441,28 +420,20 @@ export function subjectsOfYear(year) {
   return [...new Set(data.classes.filter((c) => classYear(c) === year).map((c) => c.subject).filter(Boolean))].sort(koSort);
 }
 
-// 예전 데이터 고치기 (드라이브를 읽은 뒤 한 번): 학기 없는 시간표 칸에 학기 붙이기, '101반' 같은 이름을 학년 · 반 숫자로 나누기
-function migrate() {
+// 예전 버전(차시 목록)의 기록은 글이 차시 제목에만 있었다. 그 표는 더 저장하지 않으므로 제목을 기록 글(memo)로 옮겨 둔다
+// (드라이브 파일이나 백업 파일에 예전 표가 남아 있을 때만 하는 일)
+function keepOldItemTitles(tables) {
+  const items = new Map((tables.curriculum_items || []).map((i) => [i.id, i.title]));
+  if (!items.size) return;
   const stamp = now();
-  let changed = false;
-  for (const s of data.timetable_slots) {
-    if (s.year != null) continue;
-    Object.assign(s, termOf(s.created_at ? s.created_at.slice(0, 10) : todayStr()), { _u: stamp });
-    changed = true;
+  for (const l of tables.lessons || []) {
+    if (l.memo || !items.get(l.curriculum_item_id)) continue;
+    Object.assign(l, { memo: items.get(l.curriculum_item_id), _u: stamp });
   }
-  for (const c of data.classes) {
-    if (c.grade != null) continue;
-    const m = /^(\d)(\d{2})반?$/.exec((c.name || '').trim()) || /^(\d)\s*-\s*(\d{1,2})$/.exec((c.name || '').trim());
-    if (!m) continue;
-    Object.assign(c, { grade: Number(m[1]), room: Number(m[2]), name: `${Number(m[1])}학년 ${Number(m[2])}반`, _u: stamp });
-    changed = true;
-  }
-  if (changed) scheduleSave();
 }
 
 export function subjects() {
-  const set = new Set([...data.classes.map((c) => c.subject), ...data.curriculum_items.map((i) => i.subject)]);
-  return [...set].filter(Boolean).sort(koSort);
+  return [...new Set(data.classes.map((c) => c.subject))].filter(Boolean).sort(koSort);
 }
 
 // 그날 실제 시간표: 주간 시간표에 그날의 변경(교체 · 보강 · 결강)을 덮어쓴다
@@ -485,8 +456,14 @@ export function settings() {
   return { periods: 7, weekdays: 5, sem2_start: '08-01', ...data.settings[0] };
 }
 
+// 설정에서 켜고 끄는 기능 (일정 · 찾기는 기본 꺼짐, 칭찬 스티커는 기본 켜짐)
+export const FEATURES = { schedule: false, search: false, stickers: true };
+export function feature(key) {
+  return settings().features?.[key] ?? FEATURES[key];
+}
+
 // ---- 학년도 · 학기 ----
-// 주간 시간표는 학기마다 따로 (예전 칸은 migrate 가 학기를 붙인다)
+// 주간 시간표는 학기마다 따로 (학기가 없는 아주 예전 칸은 모든 학기에 보인다)
 export const slotsOf = (term) => data.timetable_slots.filter((s) => s.year == null || sameTerm(s, term));
 // 학년도는 3월에 시작한다(1~2월은 앞 학년도 2학기). 2학기 시작일은 설정에서 바꿀 수 있다
 export function termOf(dateStr) {
@@ -571,10 +548,7 @@ export async function renameUnit(unit, name) {
 }
 
 // ---- 수업 기록 ----
-// 기록에 보이는 글: 새 방식은 memo, 예전 방식은 차시 제목
-export function lessonText(l) {
-  return l.memo || itemById(l.curriculum_item_id)?.title || '';
-}
+export const lessonText = (l) => l.memo || '';
 // 그 반이 마지막으로 쓴 단원 (같은 학기 안에서)
 export function lastUnitOf(classId, term) {
   const list = lessonsOfClass(classId).filter((l) => l.unit_id && sameTerm(termOf(l.date), term));

@@ -1,5 +1,5 @@
 // 구글 로그인(Google Identity Services)과 구글 드라이브 API
-// 권한은 drive.file: 이 앱이 만든 파일과 폴더에만 접근할 수 있다 (앱 이름은 '수업관리', 예전 이름 '진도관리')
+// 권한은 drive.file: 이 앱이 만든 파일과 폴더에만 접근할 수 있다 (앱 이름은 '수업관리')
 import { GOOGLE_CLIENT_ID } from './config.js';
 
 const SCOPE_DRIVE = 'https://www.googleapis.com/auth/drive.file';
@@ -129,14 +129,10 @@ export async function ensureFolder(name, parentId) {
   return found ? found.id : createFolder(name, parentId);
 }
 
-// 내 드라이브의 '수업관리' 폴더와 그 안의 '수업 자료' 폴더.
-// 예전 이름 '진도관리' 폴더가 있으면 그 폴더(데이터가 든 쪽)를 '수업관리'로 이름만 바꿔 쓴다 (안의 파일 · 폴더 id 는 그대로)
+// 내 드라이브의 '수업관리' 폴더와 그 안의 '수업 자료' 폴더
 export const ROOT_FOLDER = '수업관리';
-const OLD_ROOT_FOLDER = '진도관리';
 export async function ensureFolders() {
-  const old = await findOne(`name='${OLD_ROOT_FOLDER}' and mimeType='${FOLDER_MIME}' and trashed=false`);
-  if (old) await renameFile(old.id, ROOT_FOLDER);
-  const root = old ? old.id : await ensureFolder(ROOT_FOLDER);
+  const root = await ensureFolder(ROOT_FOLDER);
   const materials = await ensureFolder('수업 자료', root);
   return { root, materials };
 }

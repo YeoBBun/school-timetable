@@ -1,4 +1,4 @@
-// 학생 명단: 직접 입력 · 여러 명 붙여넣기 · 나이스 엑셀 올리기 · 예시 학생, 그리고 학생 메모
+// 학생 명단: 직접 입력 · 여러 명 붙여넣기 · 나이스 엑셀 올리기, 그리고 학생 메모 (학생의 특이 행동 · 관찰)
 import { h, append, toast, showError, modal, confirmDialog, todayStr, fmtMD } from '../ui.js';
 import * as S from '../store.js';
 import { readRows } from '../xlsx.js';
@@ -16,6 +16,7 @@ export function renderStudentsTab(root, cls) {
   const list = S.studentsOf(cls);
   const term = S.viewTerm();
   const hasSample = list.some((s) => s.sample);
+  const stickers = S.feature('stickers');
   const others = S.classesOfYear(S.classYear(cls)).filter((c) => c.id !== cls.id && c.grade === cls.grade && c.room === cls.room);
 
   const save = (s, patch) => S.update('students', s.id, patch).catch(showError);
@@ -27,7 +28,7 @@ export function renderStudentsTab(root, cls) {
         s.sample ? h('span', { class: 'badge', style: { marginLeft: '6px' } }, '예시') : null),
       h('td', {}, h('select', { value: s.gender || '', onChange: (e) => save(s, { gender: e.target.value }) },
         h('option', { value: '' }, '-'), Object.entries(GENDER).map(([k, v]) => h('option', { value: k }, v)))),
-      h('td', { class: 'center' }, String(S.stickerCount(cls.id, s.id, term) || '')),
+      stickers ? h('td', { class: 'center' }, String(S.stickerCount(cls.id, s.id, term) || '')) : null,
       h('td', {}, h('div', { class: 'memo-cell' },
         h('button', { class: 'btn btn-sm', onClick: () => studentDialog(s, cls) }, notes.length ? `📝 메모 ${notes.length}` : '📝 메모 쓰기'),
         notes.length ? h('span', { class: 'small memo-last', onClick: () => studentDialog(s, cls) }, h('span', { class: 'muted' }, `${fmtMD(notes[0].date)} `), notes[0].text) : null)),
@@ -44,12 +45,10 @@ export function renderStudentsTab(root, cls) {
       h('button', { class: 'btn', onClick: () => addDialog(cls) }, '+ 학생 추가'),
       h('button', { class: 'btn', onClick: () => pasteDialog(cls) }, '여러 명 붙여넣기'),
       h('button', { class: 'btn', onClick: () => neisImport(cls) }, '나이스 엑셀로 명단 넣기'),
-      hasSample
-        ? h('button', { class: 'btn btn-danger', onClick: () => clearSamples(cls) }, '예시 학생 지우기')
-        : (list.length ? null : h('button', { class: 'btn', onClick: () => addSamples([cls]) }, '예시 학생 5명 넣기'))),
+      hasSample ? h('button', { class: 'btn btn-danger', onClick: () => clearSamples(cls) }, '예시 학생 지우기') : null),
     list.length
       ? h('div', { class: 'table-wrap' }, h('table', { class: 'table student-table' },
-        h('thead', {}, h('tr', {}, ['번호', '이름', '성별', `스티커(${term.semester}학기)`, '메모', ''].map((t) => h('th', {}, t)))),
+        h('thead', {}, h('tr', {}, ['번호', '이름', '성별', stickers ? `스티커(${term.semester}학기)` : null, '메모', ''].filter((t) => t != null).map((t) => h('th', {}, t)))),
         h('tbody', {}, rows)))
       : h('div', { class: 'empty' }, '아직 학생이 없습니다. 위 버튼으로 직접 넣거나, 나이스에서 내려받은 명렬표 · 과세특 일괄입력 양식 엑셀을 올리세요.'),
     h('p', { class: 'muted small' }, '성별은 조 편성에서 고르게 나눌 때 씁니다(비워 둬도 됩니다). 명단은 학년도 · 학년 · 반마다 하나라서 같은 반의 다른 과목 수업과 함께 씁니다.'));
@@ -197,41 +196,11 @@ function neisImport(cls) {
   input.click();
 }
 
-// ---- 예시 학생 (시험용, 나중에 한 번에 지울 수 있다) ----
-const FAMILY = ['김', '이', '박', '최', '정', '강', '조', '윤', '장', '임', '한', '오', '서', '신', '권'];
-const GIVEN = [['하늘', 'F'], ['바다', 'M'], ['구름', 'M'], ['별빛', 'F'], ['새봄', 'F'], ['여름', 'M'], ['가을', 'F'], ['겨울', 'M'], ['노을', 'F'], ['아침', 'M'],
-  ['솔잎', 'F'], ['들꽃', 'F'], ['산들', 'M'], ['한결', 'M'], ['다온', 'F'], ['라온', 'M'], ['보람', 'F'], ['슬기', 'F'], ['우람', 'M'], ['힘찬', 'M']];
-
-export async function addSamples(classes) {
-  const done = new Set();
-  let n = 0;
-  for (const cls of classes) {
-    const key = `${S.classYear(cls)}-${cls.grade}-${cls.room}`;
-    if (!cls.grade || done.has(key) || S.studentsOf(cls).length) continue;
-    done.add(key);
-    const start = (cls.grade * 7 + cls.room * 3) % GIVEN.length;
-    const rows = Array.from({ length: 5 }, (_, i) => {
-      const [given, gender] = GIVEN[(start + i * 3) % GIVEN.length];
-      return { ...roomOf(cls), number: i + 1, name: FAMILY[(cls.room * 2 + i) % FAMILY.length] + given, gender, sample: true };
-    });
-    await S.db.from('students').insert(rows);
-    n += rows.length;
-  }
-  toast(n ? `예시 학생 ${n}명을 넣었습니다.` : '학생이 없는 반이 없습니다.', n ? 'ok' : 'info');
-}
-
+// ---- 예전에 시험용으로 넣은 예시 학생 지우기 (남아 있을 때만 버튼이 보인다) ----
 async function clearSamples(cls) {
   const list = S.studentsOf(cls).filter((s) => s.sample);
   if (!await confirmDialog(`예시 학생 ${list.length}명과 그 메모 · 점수 · 스티커를 지울까요?`)) return;
   await S.db.from('students').delete().in('id', list.map((s) => s.id));
-}
-
-export async function clearAllSamples() {
-  const list = S.data.students.filter((s) => s.sample);
-  if (!list.length) return toast('예시 학생이 없습니다.');
-  if (!await confirmDialog(`모든 반의 예시 학생 ${list.length}명과 그 메모 · 점수 · 스티커를 지울까요?`)) return;
-  await S.db.from('students').delete().in('id', list.map((s) => s.id));
-  toast('예시 학생을 지웠습니다.');
 }
 
 // ---- 학생 메모 ----
@@ -247,7 +216,7 @@ export function studentDialog(s, cls) {
       : [h('p', { class: 'muted small' }, '아직 메모가 없습니다.')]));
   };
   const date = h('input', { type: 'date', value: todayStr() });
-  const text = h('input', { type: 'text', placeholder: '예: 발표 적극적, 모둠 활동에서 갈등 조정', class: 'grow' });
+  const text = h('input', { type: 'text', placeholder: '이 학생의 특이 행동 · 관찰 (예: 발표 적극적, 모둠 활동에서 갈등 조정)', class: 'grow' });
   const add = async () => {
     const t = text.value.trim();
     if (!t) return;

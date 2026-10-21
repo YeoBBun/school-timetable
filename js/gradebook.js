@@ -1,8 +1,8 @@
-// 채점용 엑셀: 평가 하나를 반별 시트로 내려받고(목록 고르기 · 자동 점수 · 평균), 채점한 파일을 다시 읽어 앱에 넣을 내용을 만든다
+// 구글 시트 채점표: 평가 하나를 반별 시트로 만들어(목록 고르기 · 자동 점수 · 평균) 드라이브에 올리고, 채점한 시트를 다시 읽어 앱에 넣을 내용을 만든다
 import * as S from './store.js';
 import { KINDS, GRADES, rubricResult, maxScore } from './evalplan.js';
 import * as G from './google.js';
-import { loadXLSX, workbookBlob, downloadBlob } from './xlsx.js';
+import { loadXLSX, workbookBlob } from './xlsx.js';
 
 const MARKS = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮';
 const OK = /^(o|ㅇ|○|◯|v|✓|✔|1|true)$/i; // 요소 개수형에서 '만족' 으로 보는 값
@@ -66,7 +66,7 @@ function formulaOf(a, col, cols, r, X) {
 }
 
 // 첫 시트: 채점 기준 (칸 제목은 줄여 쓰므로 원문을 여기 모아 둔다)
-function guideSheet(a, sheet) {
+function guideSheet(a) {
   const rb = a.rubric || {};
   const rows = [[a.title], [[S.termLabel(a), a.subject, `${a.grade}학년`, KINDS[a.kind || 'plain'], a.period].filter(Boolean).join(' · ')], []];
   if ((a.standards || []).length) rows.push(['성취기준', a.standards.join(', ')], []);
@@ -91,17 +91,16 @@ function guideSheet(a, sheet) {
   rows.push([], ['쓰는 법'],
     ['1', '반 시트에서 기준 칸을 누르면 나오는 목록(▼)에서 고르세요. 요소 개수형은 만족하면 O 를 고릅니다.'],
     ['2', '점수 · 합계 · 최종 등급 칸은 자동으로 계산됩니다. 맨 아래에 평균 · 등급별 인원이 나옵니다.'],
-    ['3', sheet ? "다 채점하면 앱의 같은 평가 화면에서 '📥 시트에서 가져오기'를 누르세요. 가져오기 전에 바뀌는 내용을 먼저 보여 줍니다."
-      : "다 채점하면 앱의 같은 평가 화면에서 '📤 엑셀 올리기'로 올리세요. 올리기 전에 바뀌는 내용을 먼저 보여 줍니다."],
+    ['3', "다 채점하면 앱의 같은 평가 화면에서 '📥 시트에서 가져오기'를 누르세요. 가져오기 전에 바뀌는 내용을 먼저 보여 줍니다."],
     ['4', '빈칸은 앱에 있던 값을 그대로 둡니다. 앱에 넣은 값을 지우려면 앱에서 지우세요. 번호 · 이름 · 시트 이름은 고치지 마세요.']);
   return rows;
 }
 
-// 채점표 만들기: 첫 시트 '채점 기준' + 반마다 시트 → xlsx Blob (sheet: 구글 시트로 바꿀 것)
-async function buildGradebook(a, classes, sheet = false) {
+// 채점표 만들기: 첫 시트 '채점 기준' + 반마다 시트 → xlsx Blob (구글 시트로 바꿔 올린다)
+async function buildGradebook(a, classes) {
   const X = await loadXLSX();
   const wb = X.utils.book_new();
-  const g = X.utils.aoa_to_sheet(guideSheet(a, sheet));
+  const g = X.utils.aoa_to_sheet(guideSheet(a));
   g['!cols'] = [{ wch: 14 }, { wch: 70 }, { wch: 14 }];
   X.utils.book_append_sheet(wb, g, '채점 기준');
   const cols = columnsOf(a);
@@ -113,7 +112,7 @@ async function buildGradebook(a, classes, sheet = false) {
     tag[cols.length] = `jindo:${a.id}:${cls.id}`;
     const rows = [
       tag,
-      [`▼ 목록에서 고르세요. 빈칸은 앱의 값을 그대로 둡니다. 다 쓰면 앱에서 '${sheet ? '📥 시트에서 가져오기' : '📤 엑셀 올리기'}'.`],
+      [`▼ 목록에서 고르세요. 빈칸은 앱의 값을 그대로 둡니다. 다 쓰면 앱에서 '📥 시트에서 가져오기'.`],
       cols.map((c) => c.head),
     ];
     students.forEach((st) => {
@@ -181,10 +180,6 @@ async function buildGradebook(a, classes, sheet = false) {
 
 const fileTitle = (a, classes) => `${a.title}-${classes.length === 1 ? S.classLabel(classes[0]) : `${a.grade}학년 전체`}-채점표`.replace(/[\\/:*?"<>|]/g, ' ');
 
-export async function downloadGradebook(a, classes) {
-  downloadBlob(await buildGradebook(a, classes), `${fileTitle(a, classes)}.xlsx`);
-}
-
 // ---- 구글 시트 채점표: 드라이브 수업관리/채점표/2026학년도 2학기/ 에 평가마다 하나 (assessments.sheet_id) ----
 // 시트가 휴지통에 있거나 없어졌으면 null
 export async function gradeSheetId(a) {
@@ -196,7 +191,7 @@ export async function gradeSheetId(a) {
 export async function createGradeSheet(a, classes) {
   const root = S.drive.rootId || (await G.ensureFolders()).root;
   const folder = await G.ensureFolder(`${a.year}학년도 ${a.semester}학기`, await G.ensureFolder('채점표', root));
-  const id = await G.createSheetFromXlsx(await buildGradebook(a, classes, true), fileTitle(a, classes), folder);
+  const id = await G.createSheetFromXlsx(await buildGradebook(a, classes), fileTitle(a, classes), folder);
   if (a.sheet_id && a.sheet_id !== id) await G.trashFile(a.sheet_id);
   await S.update('assessments', a.id, { sheet_id: id });
   return id;
@@ -212,10 +207,10 @@ function uniqueName(wb, base) {
   return name;
 }
 
-// ---- 채점한 엑셀 읽기 → { changes: [{cls, st, cur, next, isNew}], same, errors, unknown, skipped, other } ----
-export async function readGradebook(a, classes, source) {
+// ---- 구글 시트에서 받은 xlsx 읽기 → { changes: [{cls, st, cur, next, isNew}], same, errors, unknown, skipped, other } ----
+async function readGradebook(a, classes, buf) {
   const X = await loadXLSX();
-  const wb = X.read(source instanceof ArrayBuffer ? source : await source.arrayBuffer(), { type: 'array' });
+  const wb = X.read(buf, { type: 'array' });
   const kind = a.kind || 'plain';
   const rb = a.rubric || {};
   const out = { changes: [], same: 0, errors: [], unknown: [], skipped: [], sheets: 0 };
@@ -224,7 +219,7 @@ export async function readGradebook(a, classes, source) {
     const [, aid, cid] = String((rows[0] || []).find((v) => String(v).startsWith('jindo:')) || '').split(':');
     if (aid && aid !== a.id) {
       const other = S.data.assessments.find((x) => x.id === aid);
-      throw new Error(`이 파일은 다른 평가${other ? `('${other.title}')` : ''}의 채점표입니다. 그 평가 화면에서 올리세요.`);
+      throw new Error(`이 파일은 다른 평가${other ? `('${other.title}')` : ''}의 채점표입니다. 그 평가 화면에서 가져오세요.`);
     }
     const cls = classes.find((c) => c.id === cid) || classes.find((c) => S.classLabel(c) === name.trim());
     if (!cls) { if (name !== '채점 기준') out.skipped.push(name); continue; }

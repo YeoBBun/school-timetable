@@ -11,12 +11,13 @@ import materials from './views/materials.js';
 import settings from './views/settings.js';
 
 // nav: false 인 화면은 메뉴에 없고 링크로만 들어간다 (#/class/반id)
+// feature 가 붙은 화면은 설정에서 끄면 메뉴에서 빠지고 주소로 들어와도 홈을 보여 준다
 const ROUTES = [
   { path: 'today', label: '홈', view: home },
   { path: 'materials', label: '수업 자료', view: materials },
   { path: 'assess', label: '수행평가', view: assess },
-  { path: 'schedule', label: '일정', view: schedule },
-  { path: 'search', label: '찾기', view: search },
+  { path: 'schedule', label: '일정', view: schedule, feature: 'schedule' },
+  { path: 'search', label: '찾기', view: search, feature: 'search' },
   { path: 'settings', label: '설정', view: settings },
   // 시간표 · 반은 설정 안의 탭 (예전 주소 #/timetable 도 그대로 열린다)
   { path: 'timetable', view: (root) => settings(root, 'timetable'), nav: false, parent: 'settings' },
@@ -26,6 +27,8 @@ const ROUTES = [
 const app = document.getElementById('app');
 let viewEl = null;
 let renderPending = false;
+const routeOn = (r) => !r.feature || S.feature(r.feature);
+const navKey = () => ROUTES.filter(routeOn).map((r) => r.path).join(',');
 
 export function go(path) {
   if (location.hash === `#/${path}`) render();
@@ -35,7 +38,7 @@ export function go(path) {
 // '#/class/abc/students' → class 화면 + arg 'abc' + sub 'students'
 function currentRoute() {
   const [path, arg, sub] = location.hash.replace(/^#\/?/, '').split('/');
-  const route = ROUTES.find((r) => r.path === path) || ROUTES[0];
+  const route = ROUTES.find((r) => r.path === path && routeOn(r)) || ROUTES[0];
   const dec = (v) => (v ? decodeURIComponent(v) : undefined);
   return { ...route, arg: dec(arg), sub: dec(sub) };
 }
@@ -64,7 +67,7 @@ function shell() {
   const route = currentRoute();
   viewEl = h('main', { class: 'view', id: 'view' });
   const nav = h('nav', { class: 'nav' },
-    ROUTES.filter((r) => r.nav !== false).map((r) => h('a', { href: `#/${r.path}`, class: r.path === (route.parent || route.path) ? 'active' : '' }, r.label)));
+    ROUTES.filter((r) => r.nav !== false && routeOn(r)).map((r) => h('a', { href: `#/${r.path}`, class: r.path === (route.parent || route.path) ? 'active' : '' }, r.label)));
   const side = h('aside', { class: 'sidebar' },
     h('div', { class: 'brand' }, '수업관리'),
     h('div', { class: 'term-picker', id: 'term-picker' }),
@@ -73,6 +76,7 @@ function shell() {
       syncBadge(),
       h('div', { class: 'muted small', id: 'user-email' }, S.session.user?.email || '')));
   app.replaceChildren(h('div', { class: 'layout' }, side, viewEl));
+  app.dataset.nav = navKey();
 }
 
 // 왼쪽 위 학기 고르기 (엑셀 시트 탭처럼 앱 전체가 그 학기를 보여 준다)
@@ -96,7 +100,8 @@ function otherTermBanner() {
 
 export function render({ remote = false } = {}) {
   if (!S.session.user) return;
-  if (!viewEl || !viewEl.isConnected) shell();
+  // 설정에서 메뉴를 켜고 끄면 메뉴를 다시 만든다
+  if (!viewEl || !viewEl.isConnected || app.dataset.nav !== navKey()) shell();
   // 다른 기기의 변경은 입력 중일 때 미뤘다가 포커스가 빠질 때 반영한다. 모달이 열려 있을 때도 미룬다
   const active = document.activeElement;
   const typing = remote && viewEl.contains(active) && active.matches('textarea, input[type=text], input[type=number], input[type=search], input:not([type])');

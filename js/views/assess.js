@@ -1,7 +1,7 @@
-// 수행평가: 평가계획서(hwpx) 불러오기, 평가 만들기(학기 · 과목 · 학년), 반별 날짜, 세부 기준 채점 · 관찰 메모, 엑셀 내려받기
+// 수행평가: 평가계획서(hwpx) 불러오기, 평가 만들기(학기 · 과목 · 학년), 반별 날짜, 세부 기준 채점 · 관찰 메모, 구글 시트 채점표
 import { h, append, toast, showError, modal, confirmDialog, fmtMD, classChip } from '../ui.js';
 import * as S from '../store.js';
-import { downloadGradebook, readGradebook, describeChange, hasResult, gradeSheetId, createGradeSheet, readGradeSheet } from '../gradebook.js';
+import { describeChange, hasResult, gradeSheetId, createGradeSheet, readGradeSheet } from '../gradebook.js';
 import { sheetUrl } from '../google.js';
 import { go } from '../app.js';
 import { KINDS, GRADES, rubricResult, maxScore, parsePlan } from '../evalplan.js';
@@ -35,9 +35,7 @@ export default function render(root) {
         h('button', { class: 'btn', onClick: () => { view.openId = ''; rerender(); } }, '← 목록'),
         h('button', { class: 'btn', onClick: () => assessmentDialog(open) }, '수정'),
         h('button', { class: 'btn btn-primary', onClick: () => openGradeSheet(open) }, '📊 구글 시트로 채점'),
-        open.sheet_id ? h('button', { class: 'btn btn-primary', onClick: () => importGradeSheet(open) }, '📥 시트에서 가져오기') : null,
-        h('button', { class: 'btn', onClick: () => downloadGradebook(open, targetClasses(open)).catch(showError) }, '엑셀 내려받기'),
-        h('button', { class: 'btn', onClick: () => uploadGradebook(open, targetClasses(open)) }, '엑셀 올리기')),
+        open.sheet_id ? h('button', { class: 'btn btn-primary', onClick: () => importGradeSheet(open) }, '📥 시트에서 가져오기') : null),
       open.sheet_id ? h('p', { class: 'muted small' }, "구글 시트에서 채점한 뒤 '📥 시트에서 가져오기'를 누르면 바뀌는 내용을 보여 주고 반영합니다. 학생 명단 · 채점 기준이 바뀌었으면 ",
         h('a', { href: '#', onClick: (e) => { e.preventDefault(); remakeGradeSheet(open); } }, '시트 새로 만들기'), '.') : null,
       scoreBoard(open));
@@ -264,8 +262,8 @@ export function scoreTable(a, cls) {
       kind === 'grade' && (rb.criteria || []).length
         ? h('label', { class: 'inline small' }, h('input', { type: 'checkbox', checked: showDetail, onChange: (e) => { if (e.target.checked) detailOpen.add(a.id); else detailOpen.delete(a.id); go(location.hash.slice(2)); } }), '세부 기준으로 채점')
         : null,
-      h('button', { class: 'btn btn-sm', onClick: () => downloadGradebook(a, [cls]).catch(showError) }, '📥 채점용 엑셀'),
-      h('button', { class: 'btn btn-sm', onClick: () => uploadGradebook(a, [cls]) }, '📤 엑셀 올리기')),
+      h('button', { class: 'btn btn-sm', title: '이 평가의 모든 반 채점표(구글 시트)', onClick: () => openGradeSheet(a) }, '📊 구글 시트로 채점'),
+      a.sheet_id ? h('button', { class: 'btn btn-sm', onClick: () => importGradeSheet(a) }, '📥 시트에서 가져오기') : null),
     rubricGuide(a),
     h('div', { class: 'table-wrap' }, h('table', { class: 'table score-table' },
       h('thead', {}, h('tr', {}, head.map((t, k) => h('th', { title: kind === 'count' && k >= 2 && k < 2 + (rb.elements || []).length ? rb.elements[k - 2] : (rb.criteria || [])[k - 2]?.text || '' }, t)))),
@@ -306,17 +304,6 @@ async function importGradeSheet(a) {
     toast('구글 시트를 읽는 중…');
     showImport(a, await readGradeSheet(a, targetClasses(a), id), '구글 시트에서 가져오기');
   } catch (err) { showError(err); }
-}
-
-// 채점한 엑셀 올리기
-function uploadGradebook(a, classes) {
-  const input = h('input', { type: 'file', accept: '.xlsx,.xls' });
-  input.addEventListener('change', async () => {
-    const file = input.files[0];
-    if (!file) return;
-    try { showImport(a, await readGradebook(a, classes, file), '채점한 엑셀 올리기'); } catch (err) { showError(err); }
-  });
-  input.click();
 }
 
 // 읽은 채점 결과 → 바뀌는 내용 미리보기 → 반영
