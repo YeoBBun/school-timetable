@@ -1,12 +1,12 @@
-// 과세특(교과 세부능력 및 특기사항) 쓰기: 학생 한 명의 메모 · 수행평가 · 칭찬 스티커 · 조 활동 · 배운 단원을 모아 보고 옆에서 초안을 쓴다
-import { h, append, toast, showError, modal, confirmDialog, fmtMD, todayStr } from '../ui.js';
+// 과세특(교과 세부능력 및 특기사항) 쓰기: 학생 한 명의 이 학기 수행평가 결과 · 관찰 메모 · 학생 메모를 보며 초안을 고쳐 쓴다
+// 반 전체 초안은 '🤖 AI로 반 전체 초안'(views/seteukAI.js)에서 만든다
+import { h, append, toast, showError, modal, confirmDialog, fmtMD } from '../ui.js';
 import * as S from '../store.js';
 import { go } from '../app.js';
 import { studentDialog } from './students.js';
-import { noteDate } from './records.js';
-import { downloadXlsx, openWorkbook, saveWorkbook } from '../xlsx.js';
-import { GRADES, rubricResult, maxScore, toNoun } from '../evalplan.js';
-import { byteLen, assemble, aiSettings } from '../seteukAI.js';
+import { openWorkbook, saveWorkbook } from '../xlsx.js';
+import { rubricResult, maxScore, toNoun } from '../evalplan.js';
+import { byteLen, assemble, aiSettings, evidenceOf, EVIDENCE_LABEL, targetsOf } from '../seteukAI.js';
 import { renderSeteukAI, requirementBadge } from './seteukAI.js';
 
 const picked = new Map(); // 반 id → 보고 있는 학생 id
@@ -30,12 +30,7 @@ function gather(s, cls) {
   const inTerm = (d) => S.sameTerm(S.termOf(d), term);
   const notes = S.notesOfStudent(s.id).filter((n) => inTerm(n.date) && (opts.allSubjects || !n.subject || n.subject === subject));
   const assessments = S.assessmentsOf(cls, term);
-  const stickers = S.data.stickers.filter((x) => x.class_id === cls.id && x.student_id === s.id && inTerm(x.date))
-    .sort((a, b) => b.date.localeCompare(a.date));
-  const groups = S.data.groupings.filter((g) => g.class_id === cls.id && inTerm(g.date))
-    .map((g) => { const gi = g.groups.findIndex((ids) => ids.includes(s.id)); return gi < 0 ? null : { g, gi }; })
-    .filter(Boolean).sort((a, b) => b.g.date.localeCompare(a.g.date));
-  return { term, year, subject, notes, assessments, stickers, groups };
+  return { term, year, subject, notes, assessments };
 }
 
 // 학생 탭 등에서 이 학생의 종합 화면으로 바로 가기
@@ -51,7 +46,7 @@ export function renderSeteukTab(root, cls) {
     return;
   }
   if (aiMode.has(cls.id)) {
-    renderSeteukAI(root, cls, () => { aiMode.delete(cls.id); go(`class/${cls.id}/seteuk`); });
+    renderSeteukAI(root, cls, () => { aiMode.delete(cls.id); go(`class/${cls.id}/seteuk`); }, { fillNeis: () => fillNeisForm(cls) });
     return;
   }
   let sel = students.find((s) => s.id === picked.get(cls.id)) || students[0];
@@ -59,15 +54,15 @@ export function renderSeteukTab(root, cls) {
   const term = termFor(cls);
   const pick = (s) => { picked.set(cls.id, s.id); go(`class/${cls.id}/seteuk`); };
 
+  const targets = new Set(targetsOf(cls, term, students).map((x) => x.id));
   const list = h('div', { class: 'card seteuk-list' }, students.map((s) => {
-    const d = gather(s, cls);
-    const scored = d.assessments.filter((a) => S.scoreOf(a.id, s.id)).length;
+    const e = evidenceOf(s, cls, term);
     const draft = seteukOf(s, term, cls.subject)?.text || '';
     return h('button', { class: `seteuk-student ${s === sel ? 'active' : ''}`, onClick: () => pick(s) },
       h('div', { class: 'row' }, h('strong', {}, `${s.number}. ${s.name}`), h('span', { class: 'grow' }),
-        draft ? h('span', { class: 'badge badge-ok' }, `초안 ${charCount(draft)}자`) : null),
-      h('div', { class: 'small muted' }, [`메모 ${d.notes.length}`, `평가 ${scored}/${d.assessments.length}`,
-        S.feature('stickers') ? `⭐ ${d.stickers.reduce((n, x) => n + (x.n || 1), 0)}` : null].filter(Boolean).join(' · ')));
+        targets.has(s.id) ? h('span', { class: 'badge' }, '대상') : null,
+        draft ? h('span', { class: 'badge badge-ok' }, `${byteLen(draft)}B`) : null),
+      h('div', { class: 'small muted' }, `${EVIDENCE_LABEL[e.level]} · 평가 ${e.results} · 관찰 ${e.notes} · 메모 ${e.memos}`));
   }));
 
   append(root,
@@ -76,8 +71,7 @@ export function renderSeteukTab(root, cls) {
       requirementBadge(cls, term, students, (s) => seteukOf(s, term, cls.subject)),
       h('span', { class: 'grow' }),
       h('button', { class: 'btn btn-primary', onClick: () => { aiMode.add(cls.id); go(`class/${cls.id}/seteuk`); }, title: '평가 항목마다 AI 프롬프트를 만들고, 결과를 붙여넣어 반 전체 초안을 한 번에 만듭니다' }, '🤖 AI로 반 전체 초안'),
-      h('button', { class: 'btn btn-primary', onClick: () => fillNeisForm(cls), title: '나이스에서 내려받은 과세특 일괄입력 양식을 올리면 초안을 채워 내려줍니다' }, '나이스 양식에 채우기'),
-      h('button', { class: 'btn', onClick: () => exportDrafts(cls) }, '초안 모아 엑셀로')),
+      h('button', { class: 'btn', onClick: () => fillNeisForm(cls), title: '나이스에서 내려받은 과세특 일괄입력 양식을 올리면 초안을 채워 내려줍니다' }, '나이스 양식에 채우기')),
     h('div', { class: 'seteuk-cols' }, list, profile(sel, cls, students)));
 }
 
@@ -94,8 +88,8 @@ function profile(s, cls, students) {
         h('button', { class: 'btn', disabled: i === 0, onClick: () => move(-1) }, '◀ 앞 학생'),
         h('button', { class: 'btn', disabled: i === students.length - 1, onClick: () => move(1) }, '다음 학생 ▶'))),
     h('div', { class: 'seteuk-grid' },
-      h('div', {}, draftCard(s, cls, d), levelCard(s, cls, d), assessCard(s, cls, d), lessonsCard(cls, d)),
-      h('div', {}, notesCard(s, cls, d), S.feature('stickers') ? stickersCard(d) : null, groupsCard(d))));
+      h('div', {}, draftCard(s, cls, d), assessCard(s, cls, d)),
+      h('div', {}, notesCard(s, cls, d))));
 }
 
 function draftCard(s, cls, d) {
@@ -107,7 +101,7 @@ function draftCard(s, cls, d) {
   const state = h('span', { class: 'small' });
   const ta = h('textarea', {
     rows: 9, class: 'seteuk-text', value, 'data-fk': `seteuk-${key}`,
-    placeholder: '왼쪽 · 아래 기록을 보며 세특 초안을 쓰세요. 칸을 벗어나면 자동으로 저장됩니다.',
+    placeholder: "'🤖 AI로 반 전체 초안'으로 만들거나 아래 기록을 보며 직접 쓰세요. 칸을 벗어나면 자동으로 저장됩니다.",
     onInput: () => { drafts.set(key, ta.value); update(); },
     onChange: () => save(),
   });
@@ -130,27 +124,19 @@ function draftCard(s, cls, d) {
     } catch (err) { showError(err); }
   };
   update();
-  // 수행평가 결과(등급의 성취수준 문장 · 충족한 기준) + 관찰 메모 + 학생 메모를 문장으로 모아 초안 뒤에 붙인다
-  const addMaterial = () => {
-    const text = draftMaterial(s, cls, d);
-    if (!text) return toast('넣을 재료가 없습니다. 수행평가 결과 · 관찰 메모 · 학생 메모를 먼저 입력하세요.');
-    ta.value = ta.value.trim() ? `${ta.value.trim()}\n${text}` : text;
-    drafts.set(key, ta.value);
-    save();
-  };
   return h('div', { class: 'card' },
     h('div', { class: 'row', style: { marginBottom: '8px' } },
       h('h3', { style: { margin: 0 } }, '세특 초안'), state, h('span', { class: 'grow' }), counter,
-      h('button', { class: 'btn btn-sm btn-primary', title: '수행평가 결과 · 관찰 메모 · 학생 메모를 문장으로 모아 초안 뒤에 붙입니다', onClick: addMaterial }, '✨ 초안 재료 넣기'),
       h('button', { class: 'btn btn-sm', onClick: () => save() }, '저장'),
       row?.edited && row?.parts && Object.keys(row.parts).length ? h('button', {
         class: 'btn btn-sm', title: 'AI 항목 문장을 차례대로 이어 붙인 글로 되돌립니다',
         onClick: async () => {
           if (!await confirmDialog('고쳐 쓴 초안을 버리고 AI 항목 문장을 이어 붙인 글로 되돌릴까요?', { okLabel: '되돌리기' })) return;
           drafts.delete(key);
-          await S.saveSeteuk(s.id, d.term, d.subject, { text: assemble(cls, d.term, row.parts), edited: false }).catch(showError);
+          await S.saveSeteuk(s.id, d.term, d.subject, { text: assemble(cls, d.term, row.parts), edited: false, polished: false }).catch(showError);
         },
       }, '고친 것 되돌리기') : null,
+      row?.polished ? h('span', { class: 'badge' }, '다듬음') : null,
       h('button', {
         class: 'btn btn-sm',
         onClick: () => navigator.clipboard.writeText(ta.value).then(() => toast('복사했습니다. 나이스에 붙여넣으세요.', 'ok'), () => toast('복사하지 못했습니다.', 'error')),
@@ -159,48 +145,7 @@ function draftCard(s, cls, d) {
     h('p', { class: 'muted small', style: { margin: '6px 0 0' } }, '바이트는 나이스 방식(한글 3, 영문 · 숫자 · 공백 1, 줄바꿈 2)으로 셉니다. 글자 수 한도는 학교 지침을 확인하세요.'));
 }
 
-const endDot = (t) => (/[.!?]$/.test(t.trim()) ? t.trim() : `${t.trim()}.`);
 const cleanTitle = (t) => t.replace(/\s*\([^)]*점\)\s*/g, '').trim();
-
-// 초안 재료: 평가마다 "'평가 이름'에서 (등급의 성취수준 문장 또는 충족한 기준). (관찰 메모)." + 이 과목 학생 메모
-function draftMaterial(s, cls, d) {
-  const parts = [];
-  for (const a of d.assessments) {
-    const cur = S.scoreOf(a.id, s.id);
-    if (!cur || cur.special) continue;
-    const r = rubricResult(a, cur);
-    const bits = [];
-    const gd = a.kind === 'grade' && r.grade ? (a.rubric?.grades || []).find((g) => g.grade === r.grade)?.desc : '';
-    if (gd) bits.push(toNoun(gd));
-    else if (r.met.length) bits.push(`${r.met.map((t) => toNoun(t).replace(/\.$/, '')).join(', ')}.`);
-    if (cur.note) bits.push(endDot(cur.note));
-    if (bits.length) parts.push(`'${cleanTitle(a.title)}'에서 ${bits.join(' ')}`);
-  }
-  const memos = S.notesOfStudent(s.id).filter((n) => S.sameTerm(S.termOf(n.date), d.term) && (!n.subject || n.subject === d.subject)).reverse().map((n) => endDot(n.text));
-  return [...parts, ...memos].join(' ');
-}
-
-// 학기 단위 성취수준: 평가계획의 A~E 중 이 학생 수준을 골라 두면 그 문장을 보고 초안에 넣을 수 있다
-function levelCard(s, cls, d) {
-  const row = seteukOf(s, d.term, d.subject);
-  const plans = [{ semester: d.term.semester, plan: S.planOf(d.term, d.subject, cls.grade) }].filter((x) => x.plan && Object.keys(x.plan.levels || {}).length);
-  if (!plans.length) return null;
-  const pick = (g) => S.saveSeteuk(s.id, d.term, d.subject, { level: row?.level === g ? '' : g }).catch(showError);
-  const insert = (text) => {
-    const key = `${s.id}|${d.year}|${d.term.semester}|${d.subject}`;
-    const cur = drafts.has(key) ? drafts.get(key) : row?.text || '';
-    S.saveSeteuk(s.id, d.term, d.subject, { text: cur.trim() ? `${cur.trim()}\n${text}` : text, edited: true }).then(() => drafts.delete(key), showError);
-  };
-  return h('div', { class: 'card' },
-    h('h3', {}, '학기 단위 성취수준'),
-    plans.map(({ semester, plan }) => {
-      const g = row?.level;
-      return h('div', { class: 'level-pick' },
-        h('div', { class: 'row' }, h('strong', { class: 'small' }, `${semester}학기`),
-          h('div', { class: 'grade-btns' }, GRADES.filter((x) => plan.levels[x]).map((x) => h('button', { class: g === x ? 'on' : '', title: plan.levels[x], onClick: () => pick(x) }, x)))),
-        g ? h('div', { class: 'small level-text' }, toNoun(plan.levels[g]), ' ', h('button', { class: 'btn btn-sm', onClick: () => insert(toNoun(plan.levels[g])) }, '초안에 넣기')) : h('p', { class: 'muted small', style: { margin: '4px 0 0' } }, '수준을 고르면 평가계획의 문장이 보입니다.'));
-    }));
-}
 
 function assessCard(s, cls, d) {
   return h('div', { class: 'card' },
@@ -238,60 +183,6 @@ function notesCard(s, cls, d) {
         n.subject && n.subject !== cls.subject ? h('span', { class: 'badge' }, n.subject) : null,
         h('span', { class: 'grow' }, n.text)))
       : h('p', { class: 'muted small' }, '이 학기 메모가 없습니다.'));
-}
-
-function stickersCard(d) {
-  const total = d.stickers.reduce((n, x) => n + (x.n || 1), 0);
-  const bySem = [1, 2].map((sem) => d.stickers.filter((x) => S.termOf(x.date).semester === sem).reduce((n, x) => n + (x.n || 1), 0));
-  const reasons = new Map();
-  for (const x of d.stickers) if (x.reason) reasons.set(x.reason, (reasons.get(x.reason) || 0) + (x.n || 1));
-  return h('div', { class: 'card' },
-    h('h3', {}, `칭찬 스티커 ⭐ ${total}`),
-    total
-      ? [
-        h('p', { class: 'small', style: { marginTop: 0 } }, `1학기 ${bySem[0]} · 2학기 ${bySem[1]}`),
-        reasons.size ? h('div', { class: 'row' }, [...reasons].sort((a, b) => b[1] - a[1]).map(([r, n]) => h('span', { class: 'date-chip' }, `${r} ${n}`))) : null,
-        h('div', { class: 'small muted', style: { marginTop: '8px' } }, d.stickers.slice(0, 12).map((x) => `${fmtMD(x.date)}${x.reason ? ` ${x.reason}` : ''}`).join(' · ')),
-      ]
-      : h('p', { class: 'muted small' }, '이 학기 받은 스티커가 없습니다.'));
-}
-
-function groupsCard(d) {
-  return h('div', { class: 'card' },
-    h('h3', {}, `조 활동 (${d.groups.length})`),
-    d.groups.length
-      ? d.groups.map(({ g, gi }) => h('div', { class: 'row small log-row' },
-        h('span', { class: 'muted' }, fmtMD(g.date)), h('span', {}, g.name), h('span', { class: 'grow' }),
-        h('span', {}, `${gi + 1}조`)))
-      : h('p', { class: 'muted small' }, '저장한 조 편성이 없습니다.'));
-}
-
-// 이 반이 올해 배운 단원과 활동 (세특의 '무엇을 했는지' 참고용)
-function lessonsCard(cls, d) {
-  const lessons = S.lessonsOfClass(cls.id).filter((l) => S.sameTerm(S.termOf(l.date), d.term));
-  const byUnit = new Map();
-  for (const l of lessons) {
-    const k = S.unitById(l.unit_id)?.name || '단원 없음';
-    if (!byUnit.has(k)) byUnit.set(k, []);
-    byUnit.get(k).push(l);
-  }
-  return h('div', { class: 'card' },
-    h('h3', {}, `이 반 수업 (${lessons.length}회)`),
-    byUnit.size
-      ? [...byUnit].map(([u, ls]) => h('div', { class: 'unit-summary' },
-        h('strong', { class: 'small' }, u), h('span', { class: 'muted small' }, ` ${fmtMD(ls[0].date)}~${fmtMD(ls[ls.length - 1].date)}`),
-        h('div', { class: 'small' }, [...new Set(ls.map(S.lessonText).filter(Boolean))].join(' · '))))
-      : h('p', { class: 'muted small' }, '이 학기 수업 기록이 없습니다.'));
-}
-
-async function exportDrafts(cls) {
-  const term = termFor(cls);
-  const rows = [['번호', '이름', '과세특 초안', '글자 수', '바이트']];
-  for (const s of S.studentsOf(cls)) {
-    const t = seteukOf(s, term, cls.subject)?.text || '';
-    rows.push([s.number, s.name, t, charCount(t), neisBytes(t)]);
-  }
-  try { await downloadXlsx(`${S.classLabel(cls)}-${cls.subject}-${term.semester}학기-과세특-${todayStr()}.xlsx`, rows, '과세특'); } catch (err) { showError(err); }
 }
 
 // 나이스 과세특 일괄입력 양식 채우기: 나이스에서 받은 빈 양식을 올리면 '세부능력 및 특기사항' 칸에만 초안을 넣어 내려준다.
