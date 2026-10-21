@@ -1,22 +1,21 @@
 // 과세특(교과 세부능력 및 특기사항) 쓰기: 학생 한 명의 메모 · 수행평가 · 칭찬 스티커 · 조 활동 · 배운 단원을 모아 보고 옆에서 초안을 쓴다
-import { h, append, toast, showError, modal, fmtMD, todayStr } from '../ui.js';
+import { h, append, toast, showError, modal, confirmDialog, fmtMD, todayStr } from '../ui.js';
 import * as S from '../store.js';
 import { go } from '../app.js';
 import { studentDialog } from './students.js';
 import { noteDate } from './records.js';
 import { downloadXlsx, openWorkbook, saveWorkbook } from '../xlsx.js';
 import { GRADES, rubricResult, maxScore, toNoun } from '../evalplan.js';
+import { byteLen, assemble, aiSettings } from '../seteukAI.js';
+import { renderSeteukAI } from './seteukAI.js';
 
 const picked = new Map(); // 반 id → 보고 있는 학생 id
 const opts = { allSubjects: false };
 const drafts = new Map(); // 저장 전 초안 (학생 id|학년도|과목 → 글)
+const aiMode = new Set(); // AI 초안 화면을 보고 있는 반 id
 
-// 나이스 방식 바이트: 한글 등 3, 영문 · 숫자 · 공백 · 기호 1, 줄바꿈 2
-export function neisBytes(text) {
-  let n = 0;
-  for (const ch of text.replace(/\r\n/g, '\n')) n += ch === '\n' ? 2 : ch.charCodeAt(0) > 127 ? 3 : 1;
-  return n;
-}
+// 나이스 방식 바이트(UTF-8): 한글 3, 영문 · 숫자 · 공백 · 문장부호 1, 줄바꿈 2
+export const neisBytes = byteLen;
 const charCount = (text) => [...text.replace(/\r\n/g, '\n')].length;
 
 const seteukOf = (s, year, subject) => S.data.seteuk.find((x) => x.student_id === s.id && x.year === year && x.subject === subject);
@@ -49,6 +48,10 @@ export function renderSeteukTab(root, cls) {
     append(root, h('div', { class: 'empty' }, '학생 명단이 없습니다. ', h('a', { href: `#/class/${cls.id}/students` }, '학생 탭에서 먼저 넣으세요.')));
     return;
   }
+  if (aiMode.has(cls.id)) {
+    renderSeteukAI(root, cls, () => { aiMode.delete(cls.id); go(`class/${cls.id}/seteuk`); });
+    return;
+  }
   let sel = students.find((s) => s.id === picked.get(cls.id)) || students[0];
   picked.set(cls.id, sel.id);
   const year = S.classYear(cls);
@@ -70,6 +73,7 @@ export function renderSeteukTab(root, cls) {
       h('strong', {}, `${year}학년도 ${cls.subject} 과세특`),
       h('span', { class: 'muted small' }, '학생을 고르면 그 학생의 기록을 모아 보여 줍니다.'),
       h('span', { class: 'grow' }),
+      h('button', { class: 'btn btn-primary', onClick: () => { aiMode.add(cls.id); go(`class/${cls.id}/seteuk`); }, title: '평가 항목마다 AI 프롬프트를 만들고, 결과를 붙여넣어 반 전체 초안을 한 번에 만듭니다' }, '🤖 AI로 반 전체 초안'),
       h('button', { class: 'btn btn-primary', onClick: () => fillNeisForm(cls), title: '나이스에서 내려받은 과세특 일괄입력 양식을 올리면 초안을 채워 내려줍니다' }, '나이스 양식에 채우기'),
       h('button', { class: 'btn', onClick: () => exportDrafts(cls) }, '초안 모아 엑셀로')),
     h('div', { class: 'seteuk-cols' }, list, profile(sel, cls, students)));
@@ -94,7 +98,8 @@ function profile(s, cls, students) {
 
 function draftCard(s, cls, d) {
   const key = `${s.id}|${d.year}|${d.subject}`;
-  const saved = seteukOf(s, d.year, d.subject)?.text || '';
+  const row = seteukOf(s, d.year, d.subject);
+  const saved = row?.text || '';
   const value = drafts.has(key) ? drafts.get(key) : saved;
   const counter = h('span', { class: 'small muted' });
   const state = h('span', { class: 'small' });
@@ -105,7 +110,9 @@ function draftCard(s, cls, d) {
     onChange: () => save(),
   });
   const update = () => {
-    counter.textContent = `${charCount(ta.value)}자 · ${neisBytes(ta.value)}바이트`;
+    const b = neisBytes(ta.value);
+    counter.textContent = `${charCount(ta.value)}자 · ${b}/${aiSettings().bytes}바이트`;
+    counter.className = `small ${b > aiSettings().bytes ? 'warn-text' : 'muted'}`;
     const dirty = ta.value !== (seteukOf(s, d.year, d.subject)?.text || '');
     state.textContent = dirty ? '저장 안 됨' : (ta.value ? '저장됨' : '');
     state.className = `small ${dirty ? 'warn-text' : 'muted'}`;
@@ -114,7 +121,8 @@ function draftCard(s, cls, d) {
     try {
       const text = ta.value;
       if (text === (seteukOf(s, d.year, d.subject)?.text || '')) { drafts.delete(key); return update(); }
-      await S.upsert('seteuk', { student_id: s.id, year: d.year, subject: d.subject, text }, 'student_id,year,subject');
+      // 직접 고친 초안은 AI 항목 문장을 다시 넣어도 덮어쓰지 않는다
+      await S.upsert('seteuk', { student_id: s.id, year: d.year, subject: d.subject, text, edited: true }, 'student_id,year,subject');
       drafts.delete(key);
       update();
     } catch (err) { showError(err); }
@@ -133,6 +141,14 @@ function draftCard(s, cls, d) {
       h('h3', { style: { margin: 0 } }, '세특 초안'), state, h('span', { class: 'grow' }), counter,
       h('button', { class: 'btn btn-sm btn-primary', title: '수행평가 결과 · 관찰 메모 · 학생 메모를 문장으로 모아 초안 뒤에 붙입니다', onClick: addMaterial }, '✨ 초안 재료 넣기'),
       h('button', { class: 'btn btn-sm', onClick: () => save() }, '저장'),
+      row?.edited && row?.parts && Object.keys(row.parts).length ? h('button', {
+        class: 'btn btn-sm', title: 'AI 항목 문장을 차례대로 이어 붙인 글로 되돌립니다',
+        onClick: async () => {
+          if (!await confirmDialog('고쳐 쓴 초안을 버리고 AI 항목 문장을 이어 붙인 글로 되돌릴까요?', { okLabel: '되돌리기' })) return;
+          drafts.delete(key);
+          await S.upsert('seteuk', { student_id: s.id, year: d.year, subject: d.subject, text: assemble(cls, row.parts), edited: false }, 'student_id,year,subject').catch(showError);
+        },
+      }, '고친 것 되돌리기') : null,
       h('button', {
         class: 'btn btn-sm',
         onClick: () => navigator.clipboard.writeText(ta.value).then(() => toast('복사했습니다. 나이스에 붙여넣으세요.', 'ok'), () => toast('복사하지 못했습니다.', 'error')),
@@ -172,7 +188,7 @@ function levelCard(s, cls, d) {
   const insert = (text) => {
     const key = `${s.id}|${d.year}|${d.subject}`;
     const cur = drafts.has(key) ? drafts.get(key) : row?.text || '';
-    S.upsert('seteuk', { student_id: s.id, year: d.year, subject: d.subject, text: cur.trim() ? `${cur.trim()}\n${text}` : text }, 'student_id,year,subject').then(() => drafts.delete(key), showError);
+    S.upsert('seteuk', { student_id: s.id, year: d.year, subject: d.subject, text: cur.trim() ? `${cur.trim()}\n${text}` : text, edited: true }, 'student_id,year,subject').then(() => drafts.delete(key), showError);
   };
   return h('div', { class: 'card' },
     h('h3', {}, '학기 단위 성취수준'),
