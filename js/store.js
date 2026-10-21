@@ -16,7 +16,7 @@ const CACHE_MAX_AGE = 60 * 24 * 3600 * 1000; // 지운 기록(90일)보다 짧�
 
 // 기본키가 id 가 아닌 테이블
 // folders: 드라이브 폴더 위치 (key 예: 'y:2026', 's:2026:2', 'j:2026:2:국어', 'u:<단원 id>', 'p:<단원 id>:lesson')
-const KEYS = { lesson_materials: ['lesson_id', 'material_id'], settings: ['user_id'], folders: ['key'], scores: ['assessment_id', 'student_id'], gcal_map: ['key'], seteuk: ['student_id', 'year', 'subject'] };
+const KEYS = { lesson_materials: ['lesson_id', 'material_id'], settings: ['user_id'], folders: ['key'], scores: ['assessment_id', 'student_id'], gcal_map: ['key'], seteuk: ['student_id', 'year', 'semester', 'subject'] };
 const DEFAULTS = {
   classes: { color: '#4f7cff', sort: 0 },
   timetable_changes: { note: '', class_id: null },
@@ -133,6 +133,7 @@ export function loadAll() {
     }
     loaded = true;
     dropSampleStudents();
+    splitSeteukBySemester();
     writeCache();
     emit(true);
     if (dirty) await save(); // 사본에 밀린 수정이 있으면 이어서 저장
@@ -433,6 +434,41 @@ function dropSampleStudents() {
   for (const s of data.students) if (s.sample) Object.assign(s, { sample: false, _u: stamp });
   scheduleSave();
 }
+
+// 과세특은 학기마다 하나(2026-10-21). 예전에 학년도마다 하나로 저장한 행(semester 없음)을 학기 행으로 나눈다:
+// 글 · 항목 문장은 그 학년도의 지금 학기(지난 학년도면 2학기)로, 학기별로 골라 둔 성취수준(levels{학기})은 그 학기 행의 level 로
+// (모든 기기에서 한 번씩 드라이브를 읽고 나면 이 함수는 지워도 된다)
+function splitSeteukBySemester() {
+  const old = data.seteuk.filter((r) => r.semester == null);
+  if (!old.length) return;
+  const now = termOf(todayStr());
+  for (const r of old) {
+    const main = r.year === now.year ? now.semester : 2;
+    const sems = new Set([main, ...Object.entries(r.levels || {}).filter(([, v]) => v).map(([k]) => Number(k))]);
+    db.from('seteuk').delete().match({ student_id: r.student_id, year: r.year, subject: r.subject, semester: undefined }).run();
+    for (const semester of sems) {
+      if (data.seteuk.some((x) => x.student_id === r.student_id && x.year === r.year && x.subject === r.subject && x.semester === semester)) continue;
+      const row = { student_id: r.student_id, year: r.year, semester, subject: r.subject, level: r.levels?.[semester] || '' };
+      if (semester === main) Object.assign(row, { text: r.text || '', parts: r.parts, edited: r.edited || !!(r.text || '').trim() });
+      db.from('seteuk').insert(row).run();
+    }
+  }
+}
+
+// ---- 과세특 (학년도 · 학기 · 과목마다 학생 한 명에 하나) ----
+export const seteukOf = (studentId, term, subject) => data.seteuk.find((x) => x.student_id === studentId && x.year === term.year && x.semester === term.semester && x.subject === subject);
+export const saveSeteuk = (studentId, term, subject, patch) => upsert('seteuk', { student_id: studentId, year: term.year, semester: term.semester, subject, ...patch }, 'student_id,year,semester,subject');
+
+// 자유학기: 학년도 · 학기 · 학년마다 (settings.free_terms ['2026-2-1']). 자유학기는 모든 학생, 일반 학기는 학급마다 20% 이상 과세특을 쓴다
+const freeKey = (term, grade) => `${term.year}-${term.semester}-${grade}`;
+export const isFreeTerm = (term, grade) => (settings().free_terms || []).includes(freeKey(term, grade));
+export function setFreeTerm(term, grade, on) {
+  const list = (settings().free_terms || []).filter((k) => k !== freeKey(term, grade));
+  if (on) list.push(freeKey(term, grade));
+  return upsert('settings', { free_terms: list }, 'user_id');
+}
+// 이 반에서 과세특을 써야 하는 최소 인원
+export const seteukRequired = (term, grade, n) => (isFreeTerm(term, grade) ? n : Math.ceil(n * 0.2));
 
 // 예전 버전(차시 목록)의 기록은 글이 차시 제목에만 있었다. 그 표는 더 저장하지 않으므로 제목을 기록 글(memo)로 옮겨 둔다
 // (드라이브 파일이나 백업 파일에 예전 표가 남아 있을 때만 하는 일)

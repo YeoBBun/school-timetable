@@ -498,3 +498,14 @@ tr.row-on td { background: var(--primary-soft); }
   .modal-overlay { padding: 0; align-items: flex-end; }
   .modal, .modal-wide { width: 100%; max-height: 92dvh; border-radius: 14px 14px 0 0; }
 }
+
+/* 과세특 AI 초안 */
+.ai-settings { gap: 14px; align-items: flex-end; }
+.ai-item > summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ai-item[open] > summary { margin-bottom: 8px; }
+.prompt-block { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; margin-bottom: 8px; background: var(--surface-2); }
+.prompt-pre { white-space: pre-wrap; font-size: 12px; max-height: 320px; overflow: auto; margin: 6px 0 0; }
+.ai-checks { gap: 6px; margin-bottom: 8px; }
+.ai-table td { vertical-align: top; }
+.ai-table textarea { width: 100%; min-width: 260px; font-size: 13px; }
+.ai-table tr.dup td { background: #fff4e5; }

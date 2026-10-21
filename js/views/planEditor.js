@@ -12,7 +12,8 @@ export function planFromApp(year, subject, grade) {
       .filter((a) => S.sameTerm(a, term) && a.subject === subject && a.grade === grade)
       .sort((a, b) => a.created_at.localeCompare(b.created_at))
       .map((a) => ({ id: a.id, title: a.title, period: a.period || '', area: a.area || '', standards: a.standards || [], points: a.points || '', weight: a.weight || '', kind: a.kind || 'plain', rubric: a.rubric || {}, max_score: a.max_score }));
-    semesters[semester] = { levels: { ...(S.planOf(term, subject, grade)?.levels || {}) }, items };
+    const plan = S.planOf(term, subject, grade);
+    semesters[semester] = { levels: { ...(plan?.levels || {}) }, exams: (plan?.exams || []).map((x) => ({ ...x })), items };
   }
   return { grade, subject, semesters };
 }
@@ -70,9 +71,24 @@ export function openPlanEditor({ plan, year, fileName = '' }) {
         h('summary', {}, `학기 단위 성취수준 (${Object.keys(s.levels).length ? Object.keys(s.levels).join('·') : '없음'})`),
         GRADES.map((g) => h('label', { class: 'level-row' }, h('strong', {}, g),
           h('textarea', { rows: 2, value: s.levels[g] || '', onInput: (e) => { s.levels[g] = e.target.value; } })))),
+      examCard(s),
       ...(s.items.length ? s.items.map((it, i) => itemCard(it, i)) : [h('p', { class: 'muted' }, '이 학기 수행평가가 없습니다.')]),
       h('button', { class: 'btn', onClick: () => { s.items.push({ title: '새 수행평가', period: '', area: '', standards: [], points: '', weight: '', kind: 'grade', rubric: {}, text: { a: '', b: '', c: '' }, keep: true }); draw(); } }, '+ 평가 추가'));
   };
+
+  // 정기시험(지필): 성취기준만 (과세특 AI 프롬프트에 씀). 한 줄에 하나 '이름 | [9국01-01] [9국02-03]'
+  const examCard = (s) => {
+    s.exams ||= [];
+    s.examText ??= s.exams.map((x) => `${x.title} | ${(x.standards || []).join(' ')}`).join('\n');
+    return h('details', { class: 'plan-levels', open: false },
+      h('summary', {}, `정기시험 성취기준 (${s.exams.length ? s.exams.map((x) => x.title).join(' · ') : '없음'})`),
+      h('label', {}, "한 줄에 시험 하나: '이름 | 성취기준 코드들'  예) 2학기 지필평가 | [9국02-02] [9국05-01]",
+        h('textarea', { rows: 3, value: s.examText, onInput: (e) => { s.examText = e.target.value; } })));
+  };
+  const examsFrom = (s) => (s.examText == null ? (s.exams || []) : s.examText.split('\n').map((line) => {
+    const [title, codes] = line.includes('|') ? line.split('|') : ['', line];
+    return { title: title.trim(), standards: String(codes).match(/\[[^\]]+\]/g) || [] };
+  }).filter((x) => x.standards.length).map((x, i) => ({ ...x, title: x.title || `정기시험 ${i + 1}` })));
 
   const itemCard = (it, i) => {
     ensureTarget(it, st.sem);
@@ -108,9 +124,10 @@ export function openPlanEditor({ plan, year, fileName = '' }) {
       const s = plan.semesters[semester];
       const term = { year, semester };
       const levels = Object.fromEntries(Object.entries(s.levels).filter(([, v]) => String(v).trim()));
+      const exams = examsFrom(s);
       const old = S.planOf(term, subject, grade);
-      if (old) await S.update('eval_plans', old.id, { levels });
-      else if (Object.keys(levels).length) await S.insert('eval_plans', { year, semester, subject, grade, levels });
+      if (old) await S.update('eval_plans', old.id, { levels, exams });
+      else if (Object.keys(levels).length || exams.length) await S.insert('eval_plans', { year, semester, subject, grade, levels, exams });
       for (const it of s.items) {
         if (!it.keep) continue;
         ensureTarget(it, semester); // 창에서 열어 보지 않은 학기도 대상 · 이름을 먼저 정한다

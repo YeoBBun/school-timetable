@@ -39,9 +39,10 @@ function gradeRange(rule) {
 
 const emptyItem = (title) => ({ title: cleanTitle(title), period: '', area: '', standards: [], points: '', weight: '', kind: 'plain', rubric: {} });
 
-// hwpx 표들 → { grade, subject, semesters: { 1: { levels, items }, 2: { … } } }
+// hwpx 표들 → { grade, subject, semesters: { 1: { levels, items, exams }, 2: { … } } }
+// exams: 정기시험(지필평가) [{ title, standards }] — 과세특 AI 프롬프트에 성취기준만 쓴다
 export function parsePlan(tables) {
-  const out = { grade: null, subject: null, semesters: { 1: { levels: {}, items: [] }, 2: { levels: {}, items: [] } } };
+  const out = { grade: null, subject: null, semesters: { 1: { levels: {}, items: [], exams: [] }, 2: { levels: {}, items: [], exams: [] } } };
   const item = (sem, title) => {
     const list = out.semesters[sem].items;
     let it = list.find((x) => titleKey(x.title) === titleKey(title));
@@ -65,11 +66,19 @@ export function parsePlan(tables) {
         if (sem && lv) out.semesters[sem].levels[lv] = sp(r[r.length - 1]);
       }
     } else if (has(/평가방법 및 내용/) && has(/성취기준/)) {
-      // 연간 평가 계획: 수행 · 과정평가만
+      // 연간 평가 계획: 수행 · 과정평가는 평가 항목으로, 지필(정기시험)은 성취기준만
       const cSem = colOf(/^학기$/); const cGrade = colOf(/^학년$/); const cMethod = colOf(/평가방법 및 내용/);
       const cArea = colOf(/교육과정 영역/); const cStd = colOf(/성취기준/); const cPts = colOf(/^배점$/); const cW = colOf(/반영비율/);
       rows.slice(1).forEach((r) => {
         const sem = semOf(r[cSem]);
+        if (sem && /지필|정기|고사/.test(r[cMethod])) {
+          const codes = String(r[cStd]).match(/\[[^\]]+\]/g) || [];
+          if (!codes.length) return;
+          const title = sp(r[cMethod + 1]) && sp(r[cMethod + 1]) !== sp(r[cMethod]) ? sp(r[cMethod + 1]) : `${sem}학기 정기시험`;
+          const ex = out.semesters[sem].exams.find((x) => x.title === title) || (out.semesters[sem].exams.push({ title, standards: [] }), out.semesters[sem].exams.at(-1));
+          ex.standards = [...new Set([...ex.standards, ...codes])];
+          return;
+        }
         if (!sem || !/수행|과정/.test(r[cMethod])) return;
         const raw = r[cMethod + 1];
         if (!sp(raw) || sp(raw) === sp(r[cMethod])) return;
