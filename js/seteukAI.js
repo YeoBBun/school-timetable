@@ -11,41 +11,38 @@ const encoder = new TextEncoder();
 export const byteLen = (text) => encoder.encode(String(text || '').replace(/\r?\n/g, '\r\n')).length;
 const charsOf = (bytes) => Math.max(1, Math.floor(bytes / 3));
 
-// 설정 (settings.seteuk_ai): bytes 세특 칸 전체, reserve 직접 쓸 몫, chunk 한 번에 몇 명(0 = 전체), scope 'year' | 1 | 2
-export const AI_DEFAULTS = { bytes: 1500, reserve: 300, chunk: 25, scope: 'year', growth: true };
+// 설정 (settings.seteuk_ai): bytes 세특 칸 전체, reserve 직접 쓸 몫, chunk 한 번에 몇 명(0 = 전체), growth 종합 · 성장 문장
+export const AI_DEFAULTS = { bytes: 1500, reserve: 300, chunk: 25, growth: true };
 export const aiSettings = () => ({ ...AI_DEFAULTS, ...S.settings().seteuk_ai });
 
 // 학번: 학년 + 반 두 자리 + 번호 두 자리 (예: 1학년 1반 12번 → 10112)
 export const studentCode = (s) => `${s.grade}${String(s.room).padStart(2, '0')}${String(s.number).padStart(2, '0')}`;
 
 const cleanTitle = (t) => String(t || '').replace(/\s*\([^)]*점\)\s*/g, '').trim();
-const inScope = (sem, scope) => scope === 'year' || Number(scope) === sem;
 
-// ---- 항목: 정기시험(평가계획의 성취기준) · 수행평가 · 종합(성장) ----
-// key 는 seteuk.parts 의 열쇠. 학기 → 정기시험 → 수행평가 순으로 잇고, 종합은 맨 뒤
-export function itemsOf(cls, scope = aiSettings().scope) {
+// ---- 항목: 수행평가(중심) → 정기시험(덧붙임) → 종합 · 성장 (이 차례로 잇는다) ----
+// key 는 seteuk.parts 의 열쇠. weight 는 길이 몫의 비율(수행평가 3 : 종합 2 : 정기시험 1)
+export const WEIGHTS = { assess: 3, growth: 2, exam: 1 };
+export function itemsOf(cls, term) {
   const year = S.classYear(cls);
-  const items = [];
-  for (const semester of [1, 2]) {
-    if (!inScope(semester, scope)) continue;
-    const plan = S.planOf({ year, semester }, cls.subject, cls.grade);
-    (plan?.exams || []).forEach((ex, i) => {
-      if (!(ex.standards || []).length) return;
-      items.push({ key: `exam:${semester}:${i}`, type: 'exam', semester, title: ex.title || `${semester}학기 정기시험`, standards: ex.standards, plan });
-    });
-    for (const a of S.assessmentsOf(cls, { year, semester })) {
-      items.push({ key: a.id, type: 'assess', semester, title: cleanTitle(a.title), standards: a.standards || [], a, plan });
-    }
-  }
-  if (aiSettings().growth && items.filter((it) => it.type === 'assess').length) {
-    items.push({ key: 'growth', type: 'growth', semester: null, title: '종합 · 성장', standards: [] });
+  const plan = S.planOf({ year, semester: term.semester }, cls.subject, cls.grade);
+  const items = S.assessmentsOf(cls, { year, semester: term.semester })
+    .map((a) => ({ key: a.id, type: 'assess', semester: term.semester, title: cleanTitle(a.title), standards: a.standards || [], a, plan }));
+  (plan?.exams || []).forEach((ex, i) => {
+    if (!(ex.standards || []).length) return;
+    items.push({ key: `exam:${i}`, type: 'exam', semester: term.semester, title: ex.title || `${term.semester}학기 정기시험`, standards: ex.standards, plan });
+  });
+  if (aiSettings().growth && items.some((it) => it.type === 'assess')) {
+    items.push({ key: 'growth', type: 'growth', semester: term.semester, title: '종합 · 성장', standards: [] });
   }
   return items;
 }
 
-// 항목마다 쓸 수 있는 바이트 = (전체 - 직접 쓸 몫) ÷ 항목 수
-export function shareOf(items, st = aiSettings()) {
-  return Math.max(0, Math.floor((st.bytes - st.reserve) / Math.max(1, items.length)));
+// 항목마다 쓸 수 있는 바이트: (전체 - 직접 쓸 몫)을 비율대로 나눈다 → Map(key → 바이트)
+export function sharesOf(items, st = aiSettings()) {
+  const total = items.reduce((n, it) => n + WEIGHTS[it.type], 0) || 1;
+  const room = Math.max(0, st.bytes - st.reserve);
+  return new Map(items.map((it) => [it.key, Math.floor((room * WEIGHTS[it.type]) / total)]));
 }
 
 // ---- 학생 이름 가리기: 이 학년도 학생 이름(성 + 이름, 세 글자 이상이면 이름만도) ----
@@ -63,15 +60,15 @@ function nameMasker(year) {
   return (t) => String(t || '').replace(re, '○○');
 }
 
-const seteukRow = (s, cls) => S.data.seteuk.find((x) => x.student_id === s.id && x.year === S.classYear(cls) && x.subject === cls.subject);
+const termOfItem = (it, cls) => ({ year: S.classYear(cls), semester: it.semester });
 
 // 학생 한 명의 이 항목 결과 → 프롬프트 한 줄 (넣을 것이 없으면 null)
 function resultLine(it, s, cls, mask) {
   if (it.type === 'exam') {
-    const lv = seteukRow(s, cls)?.levels?.[it.semester];
+    const lv = S.seteukOf(s.id, termOfItem(it, cls), cls.subject)?.level;
     return lv ? `${studentCode(s)}|${lv}` : `${studentCode(s)}`;
   }
-  if (it.type === 'growth') return growthLine(s, cls, mask);
+  if (it.type === 'growth') return growthLine(s, cls, termOfItem(it, cls), mask);
   const cur = S.scoreOf(it.a.id, s.id);
   if (!cur || cur.special) return null;
   const r = rubricResult(it.a, cur);
@@ -87,12 +84,10 @@ function resultLine(it, s, cls, mask) {
 }
 const shortCrit = (t) => String(t).replace(/\s+/g, ' ').trim().slice(0, 40);
 
-// 종합: 수행평가 결과를 시간 순으로 + 학기 단위 성취수준 + 이 과목 학생 메모
-function growthLine(s, cls, mask) {
-  const year = S.classYear(cls);
-  const scope = aiSettings().scope;
+// 종합: 이 학기 수행평가 결과를 시간 순으로 + 학기 단위 성취수준 + 이 학기 이 과목 학생 메모
+function growthLine(s, cls, term, mask) {
   const steps = [];
-  for (const it of itemsOf(cls, scope).filter((x) => x.type === 'assess')) {
+  for (const it of itemsOf(cls, term).filter((x) => x.type === 'assess')) {
     const cur = S.scoreOf(it.a.id, s.id);
     if (!cur || cur.special) continue;
     const r = rubricResult(it.a, cur);
@@ -101,15 +96,14 @@ function growthLine(s, cls, mask) {
     const when = it.a.dates?.[cls.id] ? fmtMD(it.a.dates[cls.id]) : it.a.period || `${it.semester}학기`;
     steps.push(`'${it.title}'(${when}) ${res}`);
   }
-  const lv = seteukRow(s, cls)?.levels || {};
-  const levels = [1, 2].filter((n) => inScope(n, scope) && lv[n]).map((n) => `${n}학기 ${lv[n]}`);
+  const level = S.seteukOf(s.id, term, cls.subject)?.level;
   const memos = S.notesOfStudent(s.id)
-    .filter((n) => S.termOf(n.date).year === year && inScope(S.termOf(n.date).semester, scope) && (!n.subject || n.subject === cls.subject))
+    .filter((n) => S.sameTerm(S.termOf(n.date), term) && (!n.subject || n.subject === cls.subject))
     .reverse().map((n) => `${fmtMD(n.date)} ${mask(n.text).trim()}`);
   if (!steps.length && !memos.length) return null;
   const bits = [];
   if (steps.length) bits.push(`수행평가: ${steps.join(' → ')}`);
-  if (levels.length) bits.push(`학기 단위 성취수준: ${levels.join(', ')}`);
+  if (level) bits.push(`학기 단위 성취수준: ${level}`);
   if (memos.length) bits.push(`교사 메모: ${memos.join('; ')}`);
   return `${studentCode(s)}|${bits.join(' / ')}`;
 }
@@ -142,9 +136,9 @@ export function promptText(it, cls, lines, share) {
   let hasLevels = false;
   if (it.type === 'growth') {
     out.push('[평가 항목]');
-    out.push(`${year}학년도 ${cls.subject} 수행평가 전체의 성취와 변화`);
+    out.push(`${year}학년도 ${it.semester}학기 ${cls.subject} 수행평가 전체의 성취와 변화`);
     out.push('');
-    const allStd = [...new Set(itemsOf(cls).flatMap((x) => x.standards).map(normCode))];
+    const allStd = [...new Set(itemsOf(cls, termOfItem(it, cls)).flatMap((x) => x.standards).map(normCode))];
     if (allStd.length) {
       out.push('[이번에 평가한 성취기준]');
       allStd.forEach((c) => out.push(`${c} ${standardText(c)}`.trim()));
@@ -153,7 +147,7 @@ export function promptText(it, cls, lines, share) {
   } else {
     out.push('[평가 항목]');
     out.push(it.type === 'exam'
-      ? `${it.title} (지필평가 — 학생마다 다른 관찰 기록이 없으므로 이 성취기준을 학습한 과정 중심으로 쓴다)`
+      ? `${it.title} (지필평가 — 수행평가 문장 뒤에 덧붙이는 짧은 문장이다. 학생마다 다른 관찰 기록이 없으므로 이 성취기준을 학습한 과정 중심으로 쓴다)`
       : `${it.title} (${it.semester}학기${it.a.period ? `, ${it.a.period}` : ''}${it.a.area ? `, ${it.a.area} 영역` : ''})`);
     if (it.type === 'assess' && it.a.note) out.push(it.a.note);
     out.push('');
@@ -189,7 +183,7 @@ export function promptText(it, cls, lines, share) {
 
   out.push('[작성 규칙]');
   let n = 1;
-  out.push(`${n++}. 학생당 한 문단, 공백 포함 ${lower}자 이상 ${upper}자 이내.`);
+  out.push(`${n++}. 학생당 ${it.type === 'exam' ? '한두 문장' : '한 문단'}, 공백 포함 ${lower}자 이상 ${upper}자 이내.`);
   out.push(`   ${upper}자에 최대한 가깝게 쓰라. ${lower}자보다 짧으면 안 된다.`);
   out.push(`${n++}. 모든 문장을 '-함.', '-음.' 꼴 명사형으로 맺어라.`);
   out.push("   존댓말과 '-다' 체를 쓰지 마라. 학교생활기록부 문체다.");
@@ -263,17 +257,18 @@ export function overlaps(map) {
 
 // ---- 조각 저장 · 초안 조립 ----
 // seteuk.parts{항목 key: 문장}, seteuk.edited: 선생님이 초안 칸을 직접 고쳤으면 true (그때부터는 조립해도 덮어쓰지 않음)
-export function assemble(cls, parts) {
-  return itemsOf(cls).map((it) => (parts?.[it.key] || '').trim()).filter(Boolean).join(' ');
+export function assemble(cls, term, parts) {
+  return itemsOf(cls, term).map((it) => (parts?.[it.key] || '').trim()).filter(Boolean).join(' ');
 }
 
-export async function saveParts(cls, it, entries) {
-  const year = S.classYear(cls);
+export async function saveParts(cls, term, it, entries) {
   for (const [studentId, text] of entries) {
-    const row = S.data.seteuk.find((x) => x.student_id === studentId && x.year === year && x.subject === cls.subject);
+    const row = S.seteukOf(studentId, term, cls.subject);
     const parts = { ...(row?.parts || {}), [it.key]: text };
-    const patch = { student_id: studentId, year, subject: cls.subject, parts };
-    if (!row?.edited) patch.text = assemble(cls, parts);
-    await S.upsert('seteuk', patch, 'student_id,year,subject');
+    const patch = { parts };
+    // 초안이 비었거나 지금까지의 항목 문장을 이어 붙인 그대로일 때만 새로 조립한다 (선생님이 쓴 글은 그대로)
+    const untouched = !row?.edited && (!(row?.text || '').trim() || row.text.trim() === assemble(cls, term, row.parts || {}));
+    if (untouched) patch.text = assemble(cls, term, parts);
+    await S.saveSeteuk(studentId, term, cls.subject, patch);
   }
 }

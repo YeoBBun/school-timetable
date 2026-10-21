@@ -4,50 +4,48 @@
 import { h, append, toast, showError, confirmDialog } from '../ui.js';
 import * as S from '../store.js';
 import { normCode, standardText } from '../standards.js';
-import { aiSettings, itemsOf, shareOf, linesOf, promptText, parseResult, overlaps, saveParts, assemble, byteLen, studentCode } from '../seteukAI.js';
+import { aiSettings, itemsOf, sharesOf, linesOf, promptText, parseResult, overlaps, saveParts, assemble, byteLen, studentCode, WEIGHTS } from '../seteukAI.js';
 
 const openItems = new Set(); // 펼쳐 둔 항목 (다시 그려도 유지)
 const pastes = new Map(); // 항목 key → 붙여넣는 중인 글
 const AI_LINKS = [['클로드 열기', 'https://claude.ai/new'], ['제미나이 열기', 'https://gemini.google.com/app'], ['챗지피티 열기', 'https://chatgpt.com/']];
 
-const rowOf = (s, cls) => S.data.seteuk.find((x) => x.student_id === s.id && x.year === S.classYear(cls) && x.subject === cls.subject);
-
 export function renderSeteukAI(root, cls, back) {
   const students = S.studentsOf(cls);
   const st = aiSettings();
-  const items = itemsOf(cls);
-  const share = shareOf(items, st);
+  const term = { year: S.classYear(cls), semester: S.viewTerm().semester };
+  const rowOf = (s) => S.seteukOf(s.id, term, cls.subject);
+  const items = itemsOf(cls, term);
+  const shares = sharesOf(items, st);
   const saveSt = (patch) => S.upsert('settings', { seteuk_ai: { ...S.settings().seteuk_ai, ...patch } }, 'user_id').catch(showError);
   const num = (key, min, max, step) => h('input', { type: 'number', min, max, step, value: st[key], style: { width: '90px' }, onChange: (e) => saveSt({ [key]: Math.max(min, Number(e.target.value) || 0) }) });
 
   append(root,
     h('div', { class: 'row', style: { marginBottom: '12px' } },
       h('button', { class: 'btn', onClick: back }, '← 학생별 보기'),
-      h('strong', {}, `${S.classYear(cls)}학년도 ${cls.subject} 과세특 · AI 초안`),
+      h('strong', {}, `${term.year}학년도 ${term.semester}학기 ${cls.subject} 과세특 · AI 초안`),
       h('span', { class: 'grow' }),
       AI_LINKS.map(([label, href]) => h('a', { class: 'btn btn-sm', href, target: '_blank', rel: 'noopener' }, label))),
     h('div', { class: 'card' },
       h('div', { class: 'row ai-settings' },
-        h('label', {}, '범위', h('select', { value: String(st.scope), onChange: (e) => saveSt({ scope: e.target.value === 'year' ? 'year' : Number(e.target.value) }) },
-          h('option', { value: 'year' }, '학년도 전체'), h('option', { value: '1' }, '1학기만'), h('option', { value: '2' }, '2학기만'))),
         h('label', {}, '세특 칸 전체(바이트)', num('bytes', 300, 9000, 50)),
         h('label', {}, '직접 쓸 몫(바이트)', num('reserve', 0, 6000, 50)),
         h('label', {}, '한 번에 몇 명씩', h('select', { value: String(st.chunk), onChange: (e) => saveSt({ chunk: Number(e.target.value) }) },
           [10, 25, 0].map((n) => h('option', { value: String(n) }, n ? `${n}명` : '전체')))),
         h('label', { class: 'inline' }, h('input', { type: 'checkbox', checked: st.growth, onChange: (e) => saveSt({ growth: e.target.checked }) }), '종합 · 성장 문장도')),
       h('p', { class: 'muted small', style: { margin: '8px 0 0' } },
-        `항목 ${items.length}개 · 항목당 ${share}바이트(약 ${Math.floor(share / 3)}자). 한글 1자 3바이트, 띄어쓰기 · 문장부호 1바이트로 셉니다. `,
+        `항목 ${items.length}개 · 길이 몫은 수행평가 ${WEIGHTS.assess} : 종합 ${WEIGHTS.growth} : 정기시험 ${WEIGHTS.exam} 비율로 나눕니다(항목마다 제목 옆에 표시). 한글 1자 3바이트, 띄어쓰기 · 문장부호 1바이트로 셉니다. 다른 학기는 왼쪽 위 학기 고르기에서 바꿉니다. `,
         '한꺼번에 많이 시킬수록 AI가 첫머리를 비슷하게 쓰거나 대충 쓰기 쉬워서, 결과가 마음에 안 들면 묶음을 줄여 보세요. ',
         'AI에게는 학번 · 성취도 · 관찰 메모만 갑니다(이름은 보내지 않고, 메모 속 학생 이름은 ○○로 가립니다).')),
     items.length
-      ? items.map((it, i) => itemCard(cls, students, it, i, share))
-      : h('div', { class: 'empty' }, "이 범위에 수행평가나 정기시험이 없습니다. 수행평가 메뉴에서 평가계획서를 올리거나 '평가계획 고치기'에서 정기시험 성취기준을 넣으세요."),
-    items.length ? finishCard(cls, students, st) : null);
+      ? items.map((it, i) => itemCard(cls, term, students, it, i, shares.get(it.key), rowOf))
+      : h('div', { class: 'empty' }, "이 학기에 수행평가나 정기시험이 없습니다. 수행평가 메뉴에서 평가계획서를 올리거나 '평가계획 고치기'에서 정기시험 성취기준을 넣으세요."),
+    items.length ? finishCard(cls, term, students, st, rowOf) : null);
 }
 
-function itemCard(cls, students, it, i, share) {
+function itemCard(cls, term, students, it, i, share, rowOf) {
   const { lines, missing } = linesOf(it, cls, students);
-  const saved = new Map(students.map((s) => [s.id, rowOf(s, cls)?.parts?.[it.key] || '']).filter(([, t]) => t));
+  const saved = new Map(students.map((s) => [s.id, rowOf(s)?.parts?.[it.key] || '']).filter(([, t]) => t));
   const typeLabel = { exam: '정기시험', assess: '수행평가', growth: '종합' }[it.type];
   const missingCodes = it.standards.map(normCode).filter((c) => !standardText(c));
 
@@ -83,7 +81,7 @@ function itemCard(cls, students, it, i, share) {
     const r = drawPreview();
     if (!r.got.size) return toast('읽은 학생이 없습니다. "학번|문장" 형식인지 확인하세요.', 'error');
     try {
-      await saveParts(cls, it, [...r.got]);
+      await saveParts(cls, term, it, [...r.got]);
       pastes.delete(it.key);
       toast(`${r.got.size}명의 문장을 넣었습니다.`, 'ok');
     } catch (err) { showError(err); }
@@ -105,7 +103,7 @@ function itemCard(cls, students, it, i, share) {
         h('td', { class: 'nowrap small' }, `${s.number}. ${s.name}`),
         h('td', {}, h('textarea', {
           rows: 2, value: t, placeholder: '(아직 없음)', 'data-fk': `ai-${it.key}-${s.id}`,
-          onChange: (e) => saveParts(cls, it, [[s.id, e.target.value.trim()]]).catch(showError),
+          onChange: (e) => saveParts(cls, term, it, [[s.id, e.target.value.trim()]]).catch(showError),
         })),
         h('td', { class: `nowrap small ${byteLen(t) > share ? 'warn-text' : 'muted'}` }, t ? `${byteLen(t)}B` : ''));
     }))) : null;
@@ -119,6 +117,7 @@ function itemCard(cls, students, it, i, share) {
     h('strong', {}, `${i + 1}. ${it.title}`),
     h('span', { class: 'badge' }, typeLabel), it.semester ? h('span', { class: 'muted small' }, ` ${it.semester}학기`) : null,
     it.standards.length ? h('span', { class: 'muted small' }, ` ${it.standards.join(' ')}`) : null,
+    h('span', { class: 'muted small' }, ` · ${share}바이트(약 ${Math.floor(share / 3)}자)`),
     h('span', { class: `badge ${done && done === lines.length ? 'badge-ok' : ''}`, style: { marginLeft: '8px' } }, lines.length ? `${done}/${lines.length}명` : '넣을 학생 없음')),
   missingCodes.length ? h('p', { class: 'warn-text small' }, `원문이 없는 성취기준: ${missingCodes.join(' ')}`) : null,
   missing.length ? h('p', { class: 'muted small' }, `${it.type === 'growth' ? '기록이' : '결과 · 관찰이'} 없어 빠지는 학생 ${missing.length}명: ${missing.map((s) => `${s.number}번`).join(', ')}`) : null,
@@ -134,18 +133,30 @@ function itemCard(cls, students, it, i, share) {
   ] : h('p', { class: 'muted small' }, it.type === 'assess' ? '이 평가에 입력한 결과가 없습니다. 수행평가 화면에서 등급 · 관찰 메모를 먼저 넣으세요.' : '넣을 기록이 없습니다.'));
 }
 
+// 자유학기는 모든 학생, 일반 학기는 학급마다 20% 이상 (자유학기 여부는 학년마다 체크)
+export function requirementBadge(cls, term, students, rowOf) {
+  const free = S.isFreeTerm(term, cls.grade);
+  const need = S.seteukRequired(term, cls.grade, students.length);
+  const written = students.filter((s) => (rowOf(s)?.text || '').trim()).length;
+  return h('span', { class: 'row', style: { gap: '6px' } },
+    h('label', { class: 'inline small', title: '자유학기면 모든 학생, 일반 학기면 학급 학생의 20% 이상을 씁니다' },
+      h('input', { type: 'checkbox', checked: free, onChange: (e) => S.setFreeTerm(term, cls.grade, e.target.checked).catch(showError) }), `${cls.grade}학년 ${term.semester}학기는 자유학기`),
+    h('span', { class: `badge ${written >= need ? 'badge-ok' : 'badge-warn'}` }, `작성 ${written}/${students.length}명 · ${free ? '전원' : `20% 이상 = ${need}명`} 필요`));
+}
+
 const chip = (kind, text) => h('span', { class: `badge ${kind === 'ok' ? 'badge-ok' : 'badge-warn'}` }, text);
 
-// 마무리: 학생마다 이어 붙인 초안 상태, 고친 것 되돌리기
-function finishCard(cls, students, st) {
-  const rows = students.map((s) => ({ s, row: rowOf(s, cls) }));
+// 마무리: 학생마다 이어 붙인 초안 상태, 써야 할 인원(자유학기 전원 · 일반 학기 20% 이상), 고친 것 되돌리기
+function finishCard(cls, term, students, st, rowOf) {
+  const rows = students.map((s) => ({ s, row: rowOf(s) }));
   const edited = rows.filter((r) => r.row?.edited && r.row?.parts && Object.keys(r.row.parts).length);
   const reset = async (list) => {
-    for (const { s, row } of list) await S.upsert('seteuk', { student_id: s.id, year: S.classYear(cls), subject: cls.subject, text: assemble(cls, row.parts), edited: false }, 'student_id,year,subject');
+    for (const { s, row } of list) await S.saveSeteuk(s.id, term, cls.subject, { text: assemble(cls, term, row.parts), edited: false });
   };
   return h('div', { class: 'card' },
     h('div', { class: 'row' },
       h('h3', { style: { margin: 0 } }, '마무리 · 이어 붙인 초안'),
+      requirementBadge(cls, term, students, rowOf),
       h('span', { class: 'grow' }),
       h('button', {
         class: 'btn btn-sm',
