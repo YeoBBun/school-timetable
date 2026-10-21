@@ -15,7 +15,6 @@ export function renderStudentsTab(root, cls) {
   }
   const list = S.studentsOf(cls);
   const term = S.viewTerm();
-  const hasSample = list.some((s) => s.sample);
   const stickers = S.feature('stickers');
   const others = S.classesOfYear(S.classYear(cls)).filter((c) => c.id !== cls.id && c.grade === cls.grade && c.room === cls.room);
 
@@ -24,8 +23,7 @@ export function renderStudentsTab(root, cls) {
     const notes = S.notesOfStudent(s.id);
     return h('tr', {},
       h('td', {}, h('input', { type: 'number', min: 1, value: s.number, class: 'num-input', 'data-fk': `num-${s.id}`, onChange: (e) => Number(e.target.value) > 0 && save(s, { number: Number(e.target.value) }) })),
-      h('td', {}, h('input', { type: 'text', value: s.name, class: 'name-input', 'data-fk': `name-${s.id}`, onChange: (e) => e.target.value.trim() && save(s, { name: e.target.value.trim() }) }),
-        s.sample ? h('span', { class: 'badge', style: { marginLeft: '6px' } }, '예시') : null),
+      h('td', {}, h('input', { type: 'text', value: s.name, class: 'name-input', 'data-fk': `name-${s.id}`, onChange: (e) => e.target.value.trim() && save(s, { name: e.target.value.trim() }) })),
       h('td', {}, h('select', { value: s.gender || '', onChange: (e) => save(s, { gender: e.target.value }) },
         h('option', { value: '' }, '-'), Object.entries(GENDER).map(([k, v]) => h('option', { value: k }, v)))),
       stickers ? h('td', { class: 'center' }, String(S.stickerCount(cls.id, s.id, term) || '')) : null,
@@ -44,14 +42,13 @@ export function renderStudentsTab(root, cls) {
       h('span', { class: 'grow' }),
       h('button', { class: 'btn', onClick: () => addDialog(cls) }, '+ 학생 추가'),
       h('button', { class: 'btn', onClick: () => pasteDialog(cls) }, '여러 명 붙여넣기'),
-      h('button', { class: 'btn', onClick: () => neisImport(cls) }, '나이스 엑셀로 명단 넣기'),
-      hasSample ? h('button', { class: 'btn btn-danger', onClick: () => clearSamples(cls) }, '예시 학생 지우기') : null),
+      h('button', { class: 'btn', onClick: () => neisImport(cls) }, '나이스 엑셀로 명단 넣기')),
     list.length
       ? h('div', { class: 'table-wrap' }, h('table', { class: 'table student-table' },
         h('thead', {}, h('tr', {}, ['번호', '이름', '성별', stickers ? `스티커(${term.semester}학기)` : null, '메모', ''].filter((t) => t != null).map((t) => h('th', {}, t)))),
         h('tbody', {}, rows)))
       : h('div', { class: 'empty' }, '아직 학생이 없습니다. 위 버튼으로 직접 넣거나, 나이스에서 내려받은 명렬표 · 과세특 일괄입력 양식 엑셀을 올리세요.'),
-    h('p', { class: 'muted small' }, '성별은 조 편성에서 고르게 나눌 때 씁니다(비워 둬도 됩니다). 명단은 학년도 · 학년 · 반마다 하나라서 같은 반의 다른 과목 수업과 함께 씁니다.'));
+    h('p', { class: 'muted small' }, '성별은 비워 둬도 됩니다. 명단은 학년도 · 학년 · 반마다 하나라서 같은 반의 다른 과목 수업과 함께 씁니다.'));
 }
 
 async function removeStudent(s) {
@@ -126,7 +123,6 @@ async function applyRoster(cls, rows, removeMissing) {
       const patch = {};
       if (found.name !== r.name) patch.name = r.name;
       if (r.gender && found.gender !== r.gender) patch.gender = r.gender;
-      if (found.sample) patch.sample = false;
       if (Object.keys(patch).length) { await S.update('students', found.id, patch); changed++; }
     } else {
       await S.insert('students', { ...roomOf(cls), number: r.number, name: r.name, gender: r.gender || '' });
@@ -194,13 +190,6 @@ function neisImport(cls) {
     } catch (err) { showError(err); }
   });
   input.click();
-}
-
-// ---- 예전에 시험용으로 넣은 예시 학생 지우기 (남아 있을 때만 버튼이 보인다) ----
-async function clearSamples(cls) {
-  const list = S.studentsOf(cls).filter((s) => s.sample);
-  if (!await confirmDialog(`예시 학생 ${list.length}명과 그 메모 · 점수 · 스티커를 지울까요?`)) return;
-  await S.db.from('students').delete().in('id', list.map((s) => s.id));
 }
 
 // ---- 학생 메모 ----

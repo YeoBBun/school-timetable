@@ -132,6 +132,7 @@ export function loadAll() {
       remoteVersion = created.version;
     }
     loaded = true;
+    dropSampleStudents();
     writeCache();
     emit(true);
     if (dirty) await save(); // 사본에 밀린 수정이 있으면 이어서 저장
@@ -418,6 +419,19 @@ export function classLabel(c) {
 }
 export function subjectsOfYear(year) {
   return [...new Set(data.classes.filter((c) => classYear(c) === year).map((c) => c.subject).filter(Boolean))].sort(koSort);
+}
+
+// 예전에 시험용으로 넣은 예시 학생(sample)을 지운다. 이름을 실제 학생으로 바꿔 쓴 경우는 지우지 않고 표시만 뗀다
+// (2026-10-21: 모든 기기에서 한 번씩 드라이브를 읽고 나면 이 함수는 지워도 된다)
+const SAMPLE_NAME = /^[김이박최정강조윤장임한오서신권](하늘|바다|구름|별빛|새봄|여름|가을|겨울|노을|아침|솔잎|들꽃|산들|한결|다온|라온|보람|슬기|우람|힘찬)$/;
+function dropSampleStudents() {
+  const list = data.students.filter((s) => s.sample);
+  if (!list.length) return;
+  const fake = list.filter((s) => SAMPLE_NAME.test(s.name)).map((s) => s.id);
+  if (fake.length) db.from('students').delete().in('id', fake).run();
+  const stamp = now();
+  for (const s of data.students) if (s.sample) Object.assign(s, { sample: false, _u: stamp });
+  scheduleSave();
 }
 
 // 예전 버전(차시 목록)의 기록은 글이 차시 제목에만 있었다. 그 표는 더 저장하지 않으므로 제목을 기록 글(memo)로 옮겨 둔다

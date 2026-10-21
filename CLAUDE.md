@@ -23,9 +23,9 @@ js/views/home.js    첫 화면: 오늘 시간표 + 담당 반 칸(단원 고르�
 js/views/records.js 기록 수정 · 반 메모 창 (공용)
 js/views/classpage.js  #/class/<반id>/<탭> 반 화면 탭: records · students · assess · groups · stickers · seteuk
 js/views/seteuk.js  과세특: 학생 한 명의 메모 · 수행평가 · 스티커 · 조 활동 · 이 반 수업을 모아 보고 초안 쓰기(seteuk 테이블), 초안 엑셀
-js/views/students.js  학생 명단(직접 · 붙여넣기 · 나이스 엑셀), 학생 메모 (예전 예시 학생은 남아 있을 때만 '예시 학생 지우기')
+js/views/students.js  학생 명단(직접 · 붙여넣기 · 나이스 엑셀), 학생 메모
 js/views/assess.js  수행평가 메뉴 + 반 탭, 점수 표(Enter 로 다음 학생), 엑셀 내려받기
-js/views/groups.js  조 편성(makeGroups: 무작위 시작 + 자리 바꾸기 탐색, 비용 = 조 크기 · 성별)
+js/views/groups.js  조 편성: 무작위(섞어서 돌아가며 나눔) 또는 직접 짜기(빈 조 + '조 없는 학생', 눌러 고르고 조 누르기 · 끌어다 놓기)
 js/views/stickers.js  칭찬 스티커 탭 + TV 보드(ui.tvOverlay)
 js/views/schedule.js  일정 메뉴, 구글 캘린더 연결 카드
 js/calendar.js      앱 → 구글 '수업관리' 캘린더 한 방향 동기화(gcal_map 테이블, 이 기기에서 바꾼 것만)
@@ -49,11 +49,11 @@ manifest.webmanifest, sw.js, icons/  휴대폰 '앱으로 설치'(PWA). sw.js �
 - 테이블: classes, timetable_slots, timetable_changes, lessons, materials, lesson_materials, days_off, settings, units, class_notes, folders,
   students, student_notes, assessments, scores, groupings, stickers, events, gcal_map, seteuk, eval_plans
   (2026-10-21 뺀 표: curriculum_items · item_materials(예전 차시 목록), group_rules(짝 규칙). TABLES 에 없는 표는 다음 저장 때 드라이브 파일에서 빠짐. 예전 차시 제목은 `keepOldItemTitles()` 가 기록 memo 로 옮김)
-- **학생**: year · grade · room · number · name · gender('M'|'F'|'') · sample(예전 시험용 예시 학생, 만드는 기능은 삭제). 반-과목이 아니라 학년도+학년+반 단위라 국어 · 독서 반이 같은 명단을 씀(`studentsOf(cls)`). 나이스 엑셀은 `parseRoster()` 가 '번호' 또는 '반/번호'(예: '1/12') + '성명/이름' 칸이 있는 줄을 제목 줄로 보고 읽음(학년 · 반 칸이 있으면 그 반만). **실제 나이스 과세특 일괄입력 양식으로 확인함(2026-10-20, 25명).** 학생개인번호는 저장하지 않음.
+- **학생**: year · grade · room · number · name · gender('M'|'F'|'') · sample(예전 시험용 예시 학생: 2026-10-21 `dropSampleStudents()` 가 드라이브를 읽은 뒤 지움 — 만들던 이름 그대로인 것만 지우고, 이름을 바꿔 쓴 학생은 표시만 뗌. 모든 기기에서 한 번씩 돈 뒤엔 이 함수도 지워도 됨). 반-과목이 아니라 학년도+학년+반 단위라 국어 · 독서 반이 같은 명단을 씀(`studentsOf(cls)`). 나이스 엑셀은 `parseRoster()` 가 '번호' 또는 '반/번호'(예: '1/12') + '성명/이름' 칸이 있는 줄을 제목 줄로 보고 읽음(학년 · 반 칸이 있으면 그 반만). **실제 나이스 과세특 일괄입력 양식으로 확인함(2026-10-20, 25명).** 학생개인번호는 저장하지 않음.
 - **수행평가**: assessments(year · semester · subject · grade · title · max_score · dates{반id: 날짜} · note · period · area · standards[] · points · weight · **kind** · **rubric**), scores(assessment_id+student_id · score · grade · checks{기준 번호: true|점수} · special · **note(관찰 메모)**). kind: plain(점수 입력) · count(요소 개수 → 점수 표) · criteria(기준별 수준 점수 합) · grade(등급 A~E + 등급별 성취수준 기술, 세부 기준 합으로 등급 자동). 결과 계산은 `rubricResult()`.
 - **평가계획서(hwpx)**(2026-10-20 사용자 학교 양식으로 확인): 수행평가 메뉴 '📄 평가계획서 올리기' → `readHwpxTables` → `parsePlan` → 확인 · 고치기 창 → '앱에 반영'. 표 머리글로 찾음: '학기 단위 성취수준'(→ eval_plans.levels A~E), '평가방법 및 내용'+'성취기준'(연간 계획: 수행 · 과정평가만), '세부평가기준'+'배점'(점수형: ①… 요소면 count, 아니면 criteria, 결시 · 표절은 specials), '등급'+'성취수준기술'(등급형). 다시 올리면 이름 → 학기 · 시기 · 방식이 같은 기존 평가를 고침(앱에서 고친 이름 유지, 결과 유지). 이번 학기(1학년 2학기)는 자유학기 과정평가라 점수보다 **등급 · 관찰 메모** 중심(사용자 요청). 학교 양식은 해마다 거의 같다고 함.
 - **eval_plans**: year · semester · subject · grade · levels{A~E: 학기 단위 성취수준}. `S.planOf(term, subject, grade)`.
-- **조 편성**: groupings(class_id · name · date · groups[[학생id]]). 조건은 조 수/인원 · 성별 고르게 · 빠지는 학생만(2026-10-21 사용자 요청으로 짝 규칙 · 지난 조 겹침 · 조장 삭제, 예전 행의 leaders 는 무시). 저장 전 결과는 groups.js 의 states(메모리)에만 있음.
+- **조 편성**: groupings(class_id · name · date · groups[[학생id]]). 조 수/인원을 정하고 **무작위로 짜기 / 직접 짜기** 두 가지만(2026-10-21 사용자 요청으로 짝 규칙 · 지난 조 겹침 · 조장 · 성별 고르게 · 빠지는 학생 삭제, 예전 행의 leaders 는 무시). 조 없는 학생은 저장할 때 빠짐. 저장 전 결과는 groups.js 의 states(메모리)에만 있음.
 - **나이스 과세특 일괄입력 양식**(2026-10-20 사용자 파일로 확인): 시트 하나(이름 = 과목명), 1행 제목 `학년도 | 학기 | 학년 | 반/번호 | 학생개인번호 | 성명 | 과목명 | 세부능력 및 특기사항`, 한 반씩, 모든 칸 텍스트 서식('@'). 과세특 탭 '나이스 양식에 채우기'(`fillNeisForm`)가 올린 양식의 세특 칸에만 초안을 넣어 `원래이름_초안채움.xlsx` 로 내려줌(학년도 · 학년 · 반 · 번호로 찾고 이름이 같을 때만). 실제 파일 · 학생 이름은 저장소에 두지 말 것.
 - 수행평가 나이스 양식: 사용자가 이번 학기는 1학년 자유학기라 **내년에** 하기로 함.
 - **채점표 형식**(구글 시트로 바꿔 올리는 xlsx. 2026-10-21 사용자 요청으로 엑셀 파일 내려받기 · 올리기는 삭제, 구글 시트만): 평가 화면 · 반 표의 '📊 구글 시트로 채점'. 첫 시트 '채점 기준'(원문 · 등급표 · 쓰는 법) + 반마다 시트(이름 = classLabel). 1행 제목(맨 오른쪽 **숨긴 칸**에 `jindo:평가id:반id`), 2행 안내, 3행 머리글, 4행부터 학생, 아래 평균 · 등급별 인원. 기준 칸은 ①② 로 시작(올릴 때 이걸로 칸을 찾음), 목록 고르기(dataValidation)와 칸 설명(prompt), 점수 · 합계 · 최종 등급은 엑셀 수식(열 때 다시 계산). 앱 값을 미리 채움(등급은 직접 고른 것만). 가져오기: 번호+이름이 둘 다 맞는 학생만, **빈칸은 앱 값 유지**(요소 개수형은 그 줄에 하나라도 적혀 있으면 요소를 새로 정함), 목록 밖 값은 넣지 않고 미리보기 창에 표시, 다른 평가 파일이면 막음. 점수 · 등급은 rubricResult 로 다시 계산. 문서 속성(Custprops)은 SheetJS 가 한글을 깨뜨리고 다른 프로그램이 지워서 쓰지 않음.
