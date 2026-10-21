@@ -14,8 +14,27 @@ export const byteLen = (text) => encoder.encode(String(text || '').replace(/\r?\
 const charsOf = (bytes) => Math.max(1, Math.floor(bytes / 3));
 
 // 설정 (settings.seteuk_ai): bytes 세특 칸 전체, reserve 직접 쓸 몫, chunk 한 번에 몇 명(0 = 전체), growth 종합 · 성장 문장
-export const AI_DEFAULTS = { bytes: 1500, reserve: 0, chunk: 25, growth: true };
+// 한 번에 많이 시킬수록 AI가 글을 비슷하게 쓴다(과세특 작업대 경험) → 기본 10명
+export const AI_DEFAULTS = { bytes: 1500, reserve: 0, chunk: 10, growth: true };
 export const aiSettings = () => ({ ...AI_DEFAULTS, ...S.settings().seteuk_ai });
+
+// 관찰 낱말: 수행평가마다 학생에게 눌러 주는 짧은 관찰(scores.tags). 학생마다 다르게 눌러 줄수록 글이 달라진다
+// 고쳐 쓴 목록은 settings.seteuk_tags
+export const DEFAULT_TAGS = [
+  '적극적으로 참여함', '끝까지 성실하게 완성함', '질문을 자주 함', '친구를 도와줌', '모둠 역할을 이끎', '피드백을 반영해 고침',
+  '자료를 꼼꼼히 조사함', '근거를 들어 설명함', '자기 생각이 뚜렷함', '표현이 창의적임', '구성이 체계적임', '발표가 자신감 있음',
+  '처음보다 나아짐', '어려워했지만 노력함', '도움을 받아 완성함',
+];
+export const tagList = () => (S.settings().seteuk_tags?.length ? S.settings().seteuk_tags : DEFAULT_TAGS);
+
+// 학생마다 글의 짜임을 다르게 (같은 근거라도 글 모양이 달라지게). 학생 번호와 항목 차례로 돌려 가며 고른다
+const ORDERS = [
+  '활동 과정 → 결과 → 드러난 태도',
+  '눈에 띈 모습 → 활동 과정 → 결과',
+  '결과 → 그 결과를 만든 행동 → 그 의미',
+  '활동 내용 → 관찰된 모습 → 성취기준과의 연결',
+  '관찰된 모습 → 결과 → 다음 배움으로 이어질 점',
+];
 
 // 학번: 학년 + 반 두 자리 + 번호 두 자리 (예: 1학년 1반 12번 → 10112)
 export const studentCode = (s) => `${s.grade}${String(s.room).padStart(2, '0')}${String(s.number).padStart(2, '0')}`;
@@ -69,7 +88,7 @@ export function evidenceOf(s, cls, term) {
     if (!cur || cur.special) continue;
     const r = rubricResult(a, cur);
     if (r.grade || r.score != null || r.met.length) results++;
-    if ((cur.note || '').trim()) notes++;
+    if ((cur.note || '').trim() || (cur.tags || []).length) notes++;
   }
   const memos = memosOf(s, cls, term).length;
   const score = results + 2 * (notes + memos);
@@ -98,7 +117,7 @@ export async function setTargets(cls, term, students, ids) {
 }
 
 // ---- 학생 한 명의 이 항목 결과 → 프롬프트 한 줄 (넣을 것이 없으면 null) ----
-function resultLine(it, s, cls, term, mask) {
+function resultLine(it, s, cls, term, mask, order) {
   if (it.type === 'growth') return growthLine(s, cls, term, mask);
   const cur = S.scoreOf(it.a.id, s.id);
   if (!cur || cur.special) return null;
@@ -109,9 +128,10 @@ function resultLine(it, s, cls, term, mask) {
   else if (it.a.kind === 'count' && (rb.elements || []).length) result = `충족 ${r.met.length}/${rb.elements.length}: ${r.met.map(shortCrit).join(' / ') || '없음'}`;
   else if (it.a.kind === 'criteria' && (rb.criteria || []).length) result = `점수 ${r.score ?? '-'}/${maxScore(it.a)}${r.met.length ? `, 최고 수준 기준: ${r.met.map(shortCrit).join(' / ')}` : ''}`;
   else if (r.score != null) result = `점수 ${r.score}/${maxScore(it.a)}`;
-  const note = cur.note ? `|관찰: ${mask(cur.note).trim()}` : '';
+  const seen = [...(cur.tags || []), ...(cur.note ? [mask(cur.note).trim()] : [])];
+  const note = seen.length ? `|관찰: ${seen.join(', ')}` : '';
   if (!result && !note) return null;
-  return `${studentCode(s)}|${result || '-'}${note}`;
+  return `${studentCode(s)}|${result || '-'}${note}|짜임: ${order}`;
 }
 const shortCrit = (t) => String(t).replace(/\s+/g, ' ').trim().slice(0, 40);
 
@@ -141,10 +161,11 @@ function growthLine(s, cls, term, mask) {
 // 이 항목에 넣을 학생과 빠지는 학생 (students 는 작성 대상만)
 export function linesOf(it, cls, term, students) {
   const mask = nameMasker(term.year);
+  const idx = Math.max(0, itemsOf(cls, term).findIndex((x) => x.key === it.key));
   const lines = [];
   const missing = [];
   for (const s of students) {
-    const line = resultLine(it, s, cls, term, mask);
+    const line = resultLine(it, s, cls, term, mask, ORDERS[(s.number + idx * 2) % ORDERS.length]);
     if (line) lines.push({ s, line }); else missing.push(s);
   }
   return { lines, missing };
@@ -216,11 +237,13 @@ export function promptText(it, cls, term, lines, share) {
     out.push('   결과가 낮아졌으면 노력한 점과 앞으로의 과제를 긍정적으로 쓰라. 근거 없이 "크게 성장함"이라고 쓰지 마라.');
     out.push('   개별 수행평가 활동을 다시 자세히 설명하지 마라. 그 내용은 다른 문장에 이미 있다.');
   } else {
-    out.push(`${n++}. 구성: 이 활동에서 → 성취기준에 비추어 무엇을 해냈는지(구체적인 행동과 결과) → 드러난 역량이나 태도.`);
+    out.push(`${n++}. 학생 줄 끝의 "짜임:" 순서대로 글을 짜라. 학생마다 짜임이 다르니 글 모양도 달라야 한다.`);
+    out.push('   짜임은 순서만 정한다. 짜임에 있는 요소라도 기록에 없으면 지어내지 말고 빼라.');
     out.push('   성취기준 문장을 그대로 베끼지 말고 학생의 행동으로 풀어 쓰라.');
     if (hasLevels) {
       out.push(`${n++}. 학생별 결과의 성취도(A~E)에 맞는 [성취도별 성취수준]을 기준으로 서술의 깊이와 범위를 달리하라.`);
       out.push('   그 기준에 없는 능력을 지어내지 마라.');
+      out.push('   성취수준 문장을 학생마다 말만 바꿔 되풀이하지 마라. 그 학생의 "관찰:"과 맞는 부분만 골라 쓰고, 글의 중심은 관찰 내용에 둔다.');
     } else {
       out.push(`${n++}. 학생별 결과(충족한 기준 · 점수)에 맞춰 서술의 깊이와 범위를 달리하라. 충족하지 못한 기준을 해낸 것처럼 쓰지 마라.`);
     }
@@ -239,7 +262,7 @@ export function promptText(it, cls, term, lines, share) {
   out.push(`${n++}. 출력은 각 줄을 "학번|문장" 형식으로만. 학생 한 명이 한 줄이다.`);
   out.push('   설명이나 인사말, 제목을 붙이지 마라.');
   out.push('');
-  out.push(it.type === 'growth' ? '[학생별 기록] 학번|기록' : '[학생별 결과] 학번|성취도 또는 결과|관찰');
+  out.push(it.type === 'growth' ? '[학생별 기록] 학번|기록' : '[학생별 결과] 학번|성취도 또는 결과|관찰|짜임');
   lines.forEach((l) => out.push(l.line));
   return out.join('\n');
 }
