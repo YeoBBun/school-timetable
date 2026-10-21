@@ -318,18 +318,16 @@ a.tab.active { color: #fff; }
 
 /* 조 편성 */
 .groups-cols { grid-template-columns: minmax(0, 1fr) 360px; }
-.opt-list { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
 .pick-chip { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 4px 10px; cursor: pointer; font-size: 13px; }
-.pick-chip.off { background: var(--surface-2); color: var(--muted); text-decoration: line-through; }
 .pick-chip.on { background: var(--text); color: #fff; border-color: var(--text); }
-.absent-list { gap: 4px; }
-.rule-row { padding: 4px 0; border-bottom: 1px solid var(--border); }
 .group-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
 .group-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; background: var(--surface-2); min-height: 80px; display: flex; flex-direction: column; gap: 4px; }
-.group-card.over { border: 2px dashed var(--primary); background: var(--primary-soft); }
-.member { display: flex; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 3px 4px 3px 8px; cursor: grab; }
-.member.leader { border-color: #e0b400; background: #fff8dc; font-weight: 700; }
-.crown { font-size: 14px; }
+.group-card.over, .group-card.can-drop:hover { border: 2px dashed var(--primary); background: var(--primary-soft); }
+.group-card.can-drop { cursor: pointer; }
+.group-card.pool { margin-bottom: 10px; flex-direction: row; flex-wrap: wrap; align-items: center; min-height: 0; }
+.group-card.pool > .row { width: 100%; }
+.member.picked { border-color: var(--primary); background: var(--primary-soft); font-weight: 700; }
+.member { display: flex; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; cursor: grab; }
 .saved-row { padding: 6px 0; border-bottom: 1px solid var(--border); }
 
 /* 칭찬 스티커 */
@@ -373,7 +371,6 @@ a.tab.active { color: #fff; }
 .tv-group { background: #1c2433; border: 2px solid #2f3a50; border-radius: 16px; padding: 18px 20px; }
 .tv-group-title { font-size: 26px; font-weight: 800; color: #f5b400; margin-bottom: 10px; }
 .tv-member { font-size: 30px; font-weight: 600; padding: 4px 0; }
-.tv-member.leader { color: #ffd84d; }
 
 /* 일정 */
 .agenda-day { padding: 8px 0; border-bottom: 1px solid var(--border); }

@@ -56,44 +56,12 @@ export function recordDialog(l) {
   ]);
 }
 
-// 같은 내용을 다른 반에도 기록한다 (자료도 함께)
-export function copyDialog(l) {
-  const src = S.classById(l.class_id);
-  const others = S.classesOfYear(S.classYear(src)).filter((c) => c.id !== src.id);
-  const mats = S.materialsOfLesson(l.id);
-  const date = h('input', { type: 'date', value: l.date });
-  const picked = new Set();
-  const withMats = h('input', { type: 'checkbox', checked: true });
-  modal(`'${S.lessonText(l)}' 다른 반에도 쓰기`, [
-    h('div', { class: 'row' }, others.map((c) => h('label', { class: 'inline check-chip' },
-      h('input', { type: 'checkbox', onChange: (e) => (e.target.checked ? picked.add(c.id) : picked.delete(c.id)) }), S.classLabel(c)))),
-    h('label', {}, '날짜', date),
-    mats.length ? h('label', { class: 'inline' }, withMats, `붙인 자료 ${mats.length}개도 함께`) : null,
-  ], [
-    { label: '취소' },
-    {
-      label: '기록하기', primary: true,
-      onClick: async () => {
-        if (!picked.size) { toast('반을 고르세요.'); return false; }
-        if (!date.value) return false;
-        for (const id of picked) {
-          const rec = await addRecord(S.classById(id), date.value, S.lessonText(l), l.unit_id);
-          if (mats.length && withMats.checked) {
-            await S.upsert('lesson_materials', mats.map((mt) => ({ lesson_id: rec.id, material_id: mt.id })), 'lesson_id,material_id');
-          }
-        }
-        toast(`${picked.size}개 반에 기록했습니다.`, 'ok');
-      },
-    },
-  ]);
-}
-
-// 반 메모 (예: 활동지 아직 안 걷음). 체크하면 끝난 메모로 넘어간다
+// 반 메모: 그 반 전체에 대한 메모 (예: 숙제, 활동지 아직 안 걷음). 체크하면 끝난 메모로 넘어간다
 // 반 메모 날짜 (예전 메모는 만든 시각으로)
 export const noteDate = (n) => n.date || toDateStr(new Date(n.created_at));
 
 export function noteDialog(cls, note = null) {
-  const text = h('input', { type: 'text', value: note?.text || '', placeholder: '예: 활동지 아직 안 걷음, 다음 시간 발표부터' });
+  const text = h('input', { type: 'text', value: note?.text || '', placeholder: '반 전체에 대한 메모 (예: 숙제 — 활동지 3쪽까지, 다음 시간 발표부터)' });
   const date = h('input', { type: 'date', value: note ? noteDate(note) : todayStr() });
   modal(`${S.classLabel(cls)} 반 메모`, [h('label', {}, '메모', text), h('label', {}, '날짜', date)], [
     note ? { label: '삭제', danger: true, onClick: () => S.remove('class_notes', { id: note.id }) } : null,

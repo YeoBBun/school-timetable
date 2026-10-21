@@ -3,7 +3,7 @@ import { h, append, toast, showError, modal, todayStr, addDays, weekdayOf, fmtDa
 import * as S from '../store.js';
 import { go } from '../app.js';
 import { attachDialog, matLink, unitSelect } from './materials.js';
-import { addRecord, recordDialog, copyDialog, noteDialog, noteItem } from './records.js';
+import { addRecord, recordDialog, noteDialog, noteItem } from './records.js';
 import { openStickerBoard } from './stickers.js';
 import { eventDialog } from './schedule.js';
 
@@ -33,7 +33,7 @@ export default function render(root) {
       h('button', { class: 'btn', title: '다음 날', onClick: () => showDate(addDays(date, 1)) }, '▶'),
       h('input', { type: 'date', value: date, onChange: (e) => e.target.value && showDate(e.target.value) })),
     timetableBar(slots, off, isToday, classes),
-    agendaBar(),
+    S.feature('schedule') ? agendaBar() : null,
     classes.length
       ? h('div', { class: 'class-cols' }, classes.map((c) => classColumn(c, term, slots)))
       : h('div', { class: 'empty' }, `${term.year}학년도에 담당하는 반이 없습니다. '설정 → 시간표 · 반'에서 반을 추가하세요.`));
@@ -86,9 +86,9 @@ function agendaBar() {
     h('button', { class: 'btn btn-sm', onClick: () => eventDialog(null, { date }) }, '+ 일정'));
 }
 
-// 반 칸 위쪽: 이 반의 2주 안 수행평가
+// 반 칸 위쪽: 이 반의 2주 안 수행평가 (일정 메뉴를 켰으면 이 반 일정도)
 function upcomingOf(cls) {
-  const items = S.agenda(date, addDays(date, 14)).filter((it) => it.class_id === cls.id);
+  const items = S.agenda(date, addDays(date, 14)).filter((it) => it.class_id === cls.id && (it.kind === 'assessment' || S.feature('schedule')));
   return items.length ? h('div', { class: 'col-agenda' }, items.map((it) => h('div', {}, `${it.date === date ? '오늘' : fmtMD(it.date)} · ${it.kind === 'assessment' ? `수행평가 ${it.ref.title}` : it.title}`))) : null;
 }
 
@@ -136,7 +136,6 @@ function classColumn(cls, term, slots) {
         h('span', { class: 'grow' }),
         h('span', { class: 'rec-actions' },
           h('button', { class: 'icon-btn', title: '자료 붙이기 (파일을 여기로 끌어다 놓아도 됩니다)', onClick: () => attachDialog(l) }, '📎'),
-          h('button', { class: 'icon-btn', title: '다른 반에도 쓰기', onClick: () => copyDialog(l) }, '⇉'),
           h('button', { class: 'icon-btn', title: '수정 · 삭제', onClick: () => recordDialog(l) }, '✎'))),
       h('div', { class: 'rec-text', onClick: () => recordDialog(l) }, S.lessonText(l) || h('span', { class: 'muted' }, '(내용 없음)')),
       mats.length ? h('div', { class: 'mat-list' }, mats.map(matLink)) : null);
@@ -156,7 +155,7 @@ function classColumn(cls, term, slots) {
     recRows.length ? h('div', { class: 'recs' }, recRows) : null,
     h('div', { class: 'col-actions' },
       h('a', { class: 'btn col-btn', href: `#/class/${cls.id}/groups` }, '👥 조 편성'),
-      h('button', { class: 'btn col-btn', onClick: () => openStickerBoard(cls) }, '⭐ 칭찬 스티커'),
+      S.feature('stickers') ? h('button', { class: 'btn col-btn', onClick: () => openStickerBoard(cls) }, '⭐ 칭찬 스티커') : null,
       h('button', { class: 'btn col-btn', onClick: () => noteDialog(cls) }, '📝 반 메모')),
     notes.length ? h('div', { class: 'notes' }, notes.map((n) => noteItem(n, cls))) : null);
 }

@@ -1,9 +1,8 @@
-// 설정: 탭 세 개 — 기본 설정(교시 수, 수업 요일, 휴업일, 예시 학생, 백업, 로그아웃) · 시간표 · 반 · 학년도 · 학기 · 단원
+// 설정: 탭 세 개 — 기본 설정(교시 수, 수업 요일, 휴업일, 메뉴 · 기능 켜고 끄기, 백업, 로그아웃) · 시간표 · 반 · 학년도 · 학기 · 단원
 import { h, append, toast, showError, confirmDialog, fmtDateLong, todayStr, downloadText } from '../ui.js';
 import * as S from '../store.js';
 import { signOut } from '../app.js';
 import * as G from '../google.js';
-import { addSamples, clearAllSamples } from './students.js';
 import timetable from './timetable.js';
 import terms from './terms.js';
 
@@ -49,6 +48,14 @@ function general(root) {
   };
   const offs = [...S.data.days_off].sort((a, b) => a.date.localeCompare(b.date));
 
+  // 메뉴 · 기능 켜고 끄기 (데이터는 그대로 남고 화면에서만 숨긴다)
+  const FEATURE_LABELS = [
+    ['schedule', '일정 메뉴', '날짜별 일정 · 홈의 다가오는 일정'],
+    ['search', '찾기 메뉴', '기록 · 자료 · 메모 검색'],
+    ['stickers', '칭찬 스티커', '홈의 스티커 버튼 · 반 화면 탭 · 학생 표의 스티커 수'],
+  ];
+  const toggle = (key, on) => saveSettings({ features: { ...st.features, [key]: on } });
+
   const backup = () => {
     const json = JSON.stringify({ exported_at: new Date().toISOString(), ...S.data }, null, 2);
     downloadText(`수업관리-백업-${todayStr()}.json`, json, 'application/json');
@@ -91,18 +98,18 @@ function general(root) {
           h('h3', {}, '시간표'),
           h('div', { class: 'row' }, h('label', {}, '하루 교시 수', periods), h('label', {}, '수업 요일', weekdays))),
         h('div', { class: 'card' },
+          h('h3', {}, '메뉴 · 기능 켜고 끄기'),
+          h('p', { class: 'muted small', style: { marginTop: 0 } }, '끈 기능은 화면에서만 숨깁니다. 적어 둔 내용은 지워지지 않고, 다시 켜면 그대로 보입니다.'),
+          FEATURE_LABELS.map(([key, label, desc]) => h('label', { class: 'inline', style: { display: 'flex', margin: '6px 0' } },
+            h('input', { type: 'checkbox', checked: S.feature(key), onChange: (e) => toggle(key, e.target.checked) }),
+            h('span', {}, h('strong', {}, label), h('span', { class: 'muted small' }, ` — ${desc}`))))),
+        h('div', { class: 'card' },
           h('h3', {}, '데이터'),
           h('p', { class: 'muted small', style: { marginTop: 0 } }, "모든 기록은 구글 드라이브 '수업관리' 폴더의 '수업관리-데이터.json' 파일에 자동으로 저장됩니다. 따로 백업해 두려면 아래에서 내려받으세요. (수업 자료 파일은 '수업 자료' 폴더에 있습니다)"),
           h('div', { class: 'row' },
             h('button', { class: 'btn', onClick: backup }, '백업 파일 내려받기'),
             h('button', { class: 'btn', onClick: restore }, '백업 파일 불러오기'),
             S.drive.rootId ? h('a', { class: 'btn', href: G.folderUrl(S.drive.rootId), target: '_blank', rel: 'noopener' }, '드라이브 폴더 열기') : null)),
-        h('div', { class: 'card' },
-          h('h3', {}, '예시 학생 (시험용)'),
-          h('p', { class: 'muted small', style: { marginTop: 0 } }, '학생이 없는 올해 반마다 가짜 학생 5명을 넣어 조 편성 · 칭찬 스티커 · 수행평가를 미리 써 볼 수 있습니다. 나중에 한 번에 지울 수 있습니다.'),
-          h('div', { class: 'row' },
-            h('button', { class: 'btn', onClick: () => addSamples(S.classesOfYear(S.viewTerm().year)).catch(showError) }, '모든 반에 예시 학생 넣기'),
-            h('button', { class: 'btn btn-danger', onClick: () => clearAllSamples().catch(showError) }, '예시 학생 모두 지우기'))),
         h('div', { class: 'card' },
           h('h3', {}, '계정'),
           h('p', { style: { marginTop: 0 } }, S.session.user?.email),
