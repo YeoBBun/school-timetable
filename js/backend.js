@@ -29,6 +29,7 @@ export const fileMeta = (...a) => B().fileMeta(...a);
 export const readJson = (...a) => B().readJson(...a);
 export const writeJson = (...a) => B().writeJson(...a);
 export const uploadFile = (...a) => B().uploadFile(...a);
+export const readBytes = (...a) => local.readBytes(...a); // 로컬 폴더에서만 (엑셀 채점표)
 export const renameFile = (...a) => B().renameFile(...a);
 export const moveFile = (...a) => B().moveFile(...a);
 export const trashFile = (...a) => B().trashFile(...a);
