@@ -1,7 +1,7 @@
 // 과세특 AI 초안 (화면 없이 계산만)
-// 흐름: 작성 대상 고르기(근거 많은 학생 추천) → 수행평가마다 프롬프트 → AI 결과 '학번|문장' 붙여넣기 → 항목 문장을 이어 초안
-//       → (선택) 이어 붙인 글 다듬기 프롬프트 → 최종 검사(바이트 · 금지 표현 · 학생끼리 비슷한 글)
-// (school-gwasetuk '과세특 작업대'에서 실제로 돌려 보고 다듬은 방식을 가져옴)
+// 흐름: 학기 단위 관찰(낱말 · 메모, 원하면 자동 배정) → 작성 대상 고르기(근거 많은 학생 추천)
+//       → 학기 전체(수행평가 모두 + 관찰 + 메모)를 한 프롬프트로 → AI 결과 '학번|글' 붙여넣기 → 최종 검사(바이트 · 금지 표현 · 학생끼리 비슷한 글)
+// (school-gwasetuk '과세특 작업대'에서 실제로 돌려 보고 다듬은 규칙을 가져옴)
 // 학생 정보는 학번 · 성취도 · 관찰 메모만 보낸다. 이름은 보내지 않고, 메모 속 학생 이름은 ○○로 가린다
 import * as S from './store.js';
 import { standardText, normCode } from './standards.js';
@@ -13,12 +13,11 @@ const encoder = new TextEncoder();
 export const byteLen = (text) => encoder.encode(String(text || '').replace(/\r?\n/g, '\r\n')).length;
 const charsOf = (bytes) => Math.max(1, Math.floor(bytes / 3));
 
-// 설정 (settings.seteuk_ai): bytes 세특 칸 전체, reserve 직접 쓸 몫, chunk 한 번에 몇 명(0 = 전체), growth 종합 · 성장 문장
-// 한 번에 많이 시킬수록 AI가 글을 비슷하게 쓴다(과세특 작업대 경험) → 기본 10명
-export const AI_DEFAULTS = { bytes: 1500, reserve: 0, chunk: 10, growth: true };
+// 설정 (settings.seteuk_ai): bytes 세특 칸 전체, reserve 직접 쓸 몫 (예전 chunk · growth 는 안 씀)
+export const AI_DEFAULTS = { bytes: 1500, reserve: 0 };
 export const aiSettings = () => ({ ...AI_DEFAULTS, ...S.settings().seteuk_ai });
 
-// 관찰 낱말: 수행평가마다 학생에게 눌러 주는 짧은 관찰(scores.tags). 학생마다 다르게 눌러 줄수록 글이 달라진다
+// 관찰 낱말: 학기 전체에 대해 학생에게 눌러 주는 짧은 관찰(seteuk.tags). 학생마다 다르게 눌러 줄수록 글이 달라진다
 // 고쳐 쓴 목록은 settings.seteuk_tags
 export const DEFAULT_TAGS = [
   '적극적으로 참여함', '끝까지 성실하게 완성함', '질문을 자주 함', '친구를 도와줌', '모둠 역할을 이끎', '피드백을 반영해 고침',
@@ -27,40 +26,31 @@ export const DEFAULT_TAGS = [
 ];
 export const tagList = () => (S.settings().seteuk_tags?.length ? S.settings().seteuk_tags : DEFAULT_TAGS);
 
-// 학생마다 글의 짜임을 다르게 (같은 근거라도 글 모양이 달라지게). 학생 번호와 항목 차례로 돌려 가며 고른다
+// 자동 배정용 낱말(settings.seteuk_auto_tags): 확인 없이 붙어도 낭패가 없는 좋은 낱말만.
+// '어려워했지만 노력함' 같은 말이나 '모둠 역할을 이끎'처럼 특정 행동을 단정하는 말은 뺐다
+export const DEFAULT_AUTO_TAGS = [
+  '적극적으로 참여함', '끝까지 성실하게 완성함', '피드백을 반영해 고침', '자료를 꼼꼼히 조사함',
+  '근거를 들어 설명함', '자기 생각이 뚜렷함', '표현이 창의적임', '구성이 체계적임',
+];
+export const autoTagList = () => (S.settings().seteuk_auto_tags?.length ? S.settings().seteuk_auto_tags : DEFAULT_AUTO_TAGS);
+
+// 학생마다 글의 짜임을 다르게 (같은 근거라도 글 모양이 달라지게). 학생 번호로 돌려 가며 고른다
 const ORDERS = [
-  '활동 과정 → 결과 → 드러난 태도',
-  '눈에 띈 모습 → 활동 과정 → 결과',
-  '결과 → 그 결과를 만든 행동 → 그 의미',
-  '활동 내용 → 관찰된 모습 → 성취기준과의 연결',
-  '관찰된 모습 → 결과 → 다음 배움으로 이어질 점',
+  '가장 눈에 띈 모습으로 시작 → 활동별 과정과 결과 → 학기 전체에서 드러난 태도',
+  '첫 활동부터 시간 순서대로 → 활동마다 결과 → 끝에 드러난 변화',
+  '가장 잘 해낸 활동으로 시작 → 그 결과를 만든 행동 → 다른 활동 → 다음 배움으로 이어질 점',
+  '학기 내내 드러난 태도 · 역량으로 시작 → 그것이 보인 활동들 → 성장',
+  '활동 내용 → 관찰된 모습 → 성취기준과의 연결 → 학기 전체 정리',
 ];
 
 // 학번: 학년 + 반 두 자리 + 번호 두 자리 (예: 1학년 1반 12번 → 10112)
 export const studentCode = (s) => `${s.grade}${String(s.room).padStart(2, '0')}${String(s.number).padStart(2, '0')}`;
-const cleanTitle = (t) => String(t || '').replace(/\s*\([^)]*점\)\s*/g, '').trim();
-
-// ---- 항목: 이 학기 수행평가마다 하나 + 종합 · 성장(근거가 있는 학생만) ----
-// 정기시험은 학생마다 다른 근거가 없어 따로 문장을 만들지 않고, 수행평가 프롬프트에 '함께 배운 성취기준'으로만 넣는다
-export const WEIGHTS = { assess: 3, growth: 2 }; // 길이 몫 비율
-export function itemsOf(cls, term) {
-  const items = S.assessmentsOf(cls, term)
-    .map((a) => ({ key: a.id, type: 'assess', title: cleanTitle(a.title), standards: a.standards || [], a }));
-  if (aiSettings().growth && items.length) items.push({ key: 'growth', type: 'growth', title: '종합 · 성장', standards: [] });
-  return items;
-}
+export const cleanTitle = (t) => String(t || '').replace(/\s*\([^)]*점\)\s*/g, '').trim();
 
 // 정기시험 성취기준 (평가계획 → 정기시험)
 export function examCodes(cls, term) {
   const plan = S.planOf(term, cls.subject, cls.grade);
   return [...new Set((plan?.exams || []).flatMap((x) => x.standards || []).map(normCode))];
-}
-
-// 항목마다 쓸 수 있는 바이트: (전체 - 직접 쓸 몫)을 비율대로 나눈다 → Map(key → 바이트)
-export function sharesOf(items, st = aiSettings()) {
-  const total = items.reduce((n, it) => n + WEIGHTS[it.type], 0) || 1;
-  const room = Math.max(0, st.bytes - st.reserve);
-  return new Map(items.map((it) => [it.key, Math.floor((room * WEIGHTS[it.type]) / total)]));
 }
 
 // ---- 학생 이름 가리기: 이 학년도 학생 이름(성 + 이름, 세 글자 이상이면 이름만도) ----
@@ -78,7 +68,17 @@ export function nameMasker(year) {
   return (t) => String(t || '').replace(re, '○○');
 }
 
-// ---- 근거: 이 학기 이 과목에서 학생에 대해 남긴 것 ----
+// ---- 학기 관찰 (seteuk.tags · seteuk.auto · seteuk.obs) ----
+// auto: 자동으로 넣은 낱말(화면에 점선으로 표시). 선생님이 확인 표시를 지우면 빈 배열
+export function obsOf(s, cls, term) {
+  const row = S.seteukOf(s.id, term, cls.subject);
+  const tags = row?.tags || [];
+  const auto = new Set((row?.auto || []).filter((t) => tags.includes(t)));
+  return { tags, auto, obs: (row?.obs || '').trim() };
+}
+export const saveObs = (s, cls, term, patch) => S.saveSeteuk(s.id, term, cls.subject, patch);
+
+// ---- 근거: 이 학기 이 과목에서 학생에 대해 남긴 것 (자동으로 넣은 낱말은 근거로 세지 않는다) ----
 const memosOf = (s, cls, term) => S.notesOfStudent(s.id).filter((n) => S.sameTerm(S.termOf(n.date), term) && (!n.subject || n.subject === cls.subject));
 export function evidenceOf(s, cls, term) {
   let results = 0;
@@ -90,6 +90,9 @@ export function evidenceOf(s, cls, term) {
     if (r.grade || r.score != null || r.met.length) results++;
     if ((cur.note || '').trim() || (cur.tags || []).length) notes++;
   }
+  const o = obsOf(s, cls, term);
+  if (o.obs) notes++;
+  notes += o.tags.filter((t) => !o.auto.has(t)).length ? 1 : 0;
   const memos = memosOf(s, cls, term).length;
   const score = results + 2 * (notes + memos);
   const level = notes + memos >= 3 ? 'rich' : notes + memos >= 1 ? 'some' : results ? 'thin' : 'none';
@@ -116,64 +119,130 @@ export async function setTargets(cls, term, students, ids) {
   for (const s of students) await S.saveSeteuk(s.id, term, cls.subject, { target: ids.has(s.id) });
 }
 
-// ---- 학생 한 명의 이 항목 결과 → 프롬프트 한 줄 (넣을 것이 없으면 null) ----
-function resultLine(it, s, cls, term, mask, order) {
-  if (it.type === 'growth') return growthLine(s, cls, term, mask);
-  const cur = S.scoreOf(it.a.id, s.id);
-  if (!cur || cur.special) return null;
-  const r = rubricResult(it.a, cur);
-  const rb = it.a.rubric || {};
-  let result = '';
-  if (r.grade) result = r.grade;
-  else if (it.a.kind === 'count' && (rb.elements || []).length) result = `충족 ${r.met.length}/${rb.elements.length}: ${r.met.map(shortCrit).join(' / ') || '없음'}`;
-  else if (it.a.kind === 'criteria' && (rb.criteria || []).length) result = `점수 ${r.score ?? '-'}/${maxScore(it.a)}${r.met.length ? `, 최고 수준 기준: ${r.met.map(shortCrit).join(' / ')}` : ''}`;
-  else if (r.score != null) result = `점수 ${r.score}/${maxScore(it.a)}`;
-  const seen = [...(cur.tags || []), ...(cur.note ? [mask(cur.note).trim()] : [])];
-  const note = seen.length ? `|관찰: ${seen.join(', ')}` : '';
-  if (!result && !note) return null;
-  return `${studentCode(s)}|${result || '-'}${note}|짜임: ${order}`;
-}
+// ---- 수행평가 결과 한 줄 ----
 const shortCrit = (t) => String(t).replace(/\s+/g, ' ').trim().slice(0, 40);
+function resultOf(a, cur) {
+  if (!cur || cur.special) return '';
+  const r = rubricResult(a, cur);
+  const rb = a.rubric || {};
+  if (r.grade) return `성취도 ${r.grade}`;
+  if (a.kind === 'count' && (rb.elements || []).length) return `충족 ${r.met.length}/${rb.elements.length}: ${r.met.map(shortCrit).join(' / ') || '없음'}`;
+  if (a.kind === 'criteria' && (rb.criteria || []).length) return `점수 ${r.score ?? '-'}/${maxScore(a)}${r.met.length ? `, 최고 수준 기준: ${r.met.map(shortCrit).join(' / ')}` : ''}`;
+  if (r.score != null) return `점수 ${r.score}/${maxScore(a)}`;
+  return '';
+}
 
-// 종합 · 성장: 결과가 바뀌었거나(수행평가 2개 이상) 교사 메모가 있는 학생만. 근거 없이 쓰면 모두 '꾸준히 참여함'이 된다
-function growthLine(s, cls, term, mask) {
+// 결과가 낮은 학생(등급 D · E 또는 만점의 60% 미만이 하나라도): 좋은 낱말을 자동으로 붙이면 결과와 어긋난다
+function lowResult(s, cls, term) {
+  return S.assessmentsOf(cls, term).some((a) => {
+    const cur = S.scoreOf(a.id, s.id);
+    if (!cur || cur.special) return false;
+    const r = rubricResult(a, cur);
+    if (r.grade) return 'DE'.includes(r.grade);
+    return r.score != null && r.score < maxScore(a) * 0.6;
+  });
+}
+const hasResult = (s, cls, term) => S.assessmentsOf(cls, term).some((a) => resultOf(a, S.scoreOf(a.id, s.id)));
+
+// ---- 관찰 자동 배정: 관찰이 하나도 없고 결과가 있는 학생에게 자동 배정용 낱말 n개씩 ----
+// 낱말이 학생들에게 고르게 돌아가도록 섞은 목록을 차례로 나눠 준다. 결과가 낮은 학생은 건너뛴다
+export function autoPlan(cls, term, students, n = 2) {
+  const pool = autoTagList();
+  const skipLow = [];
+  const plan = [];
+  let deck = [];
+  for (const s of students) {
+    const o = obsOf(s, cls, term);
+    const perAssess = S.assessmentsOf(cls, term).some((a) => { const c = S.scoreOf(a.id, s.id); return (c?.note || '').trim() || (c?.tags || []).length; });
+    if (o.tags.length || o.obs || perAssess || !hasResult(s, cls, term)) continue;
+    if (lowResult(s, cls, term)) { skipLow.push(s); continue; }
+    const pick = [];
+    while (pick.length < Math.min(n, pool.length)) {
+      if (!deck.length) deck = [...pool].sort(() => Math.random() - 0.5);
+      const t = deck.shift();
+      if (!pick.includes(t)) pick.push(t);
+    }
+    plan.push({ s, tags: pick });
+  }
+  return { plan, skipLow };
+}
+
+// ---- 학생 한 명의 학기 기록 → 프롬프트 묶음 (넣을 것이 없으면 null) ----
+function studentBlock(s, cls, term, mask, order) {
+  const lines = [];
   const steps = [];
   for (const a of S.assessmentsOf(cls, term)) {
     const cur = S.scoreOf(a.id, s.id);
-    if (!cur || cur.special) continue;
-    const r = rubricResult(a, cur);
-    const res = r.grade || (r.score != null ? `${r.score}/${maxScore(a)}점` : '');
-    if (!res) continue;
+    const res = resultOf(a, cur);
+    const seen = [...(cur?.tags || []), ...(cur?.note ? [mask(cur.note).trim()] : [])].filter(Boolean);
+    if (!res && !seen.length) continue;
     const when = a.dates?.[cls.id] ? fmtMD(a.dates[cls.id]) : a.period || '';
-    // 견줄 값: 등급은 A=0 … E=4, 점수는 만점 대비 비율(높을수록 작게)
-    const rank = r.grade ? 'ABCDE'.indexOf(r.grade) : -(r.score / (maxScore(a) || 1));
-    steps.push({ text: `'${cleanTitle(a.title)}'${when ? `(${when})` : ''} ${res}`, rank });
+    lines.push(`- ${cleanTitle(a.title)}${when ? `(${when})` : ''}: ${res || '결과 없음'}${seen.length ? ` / 관찰: ${seen.join(', ')}` : ''}`);
+    // 학기 흐름: 등급은 A=0 … E=4, 점수는 만점 대비 비율(높을수록 작게)
+    const r = rubricResult(a, cur || {});
+    if (!cur?.special && (r.grade || r.score != null)) steps.push({ text: `'${cleanTitle(a.title)}' ${r.grade || `${r.score}/${maxScore(a)}점`}`, rank: r.grade ? 'ABCDE'.indexOf(r.grade) : -(r.score / (maxScore(a) || 1)) });
   }
-  const changed = steps.length >= 2 && new Set(steps.map((x) => x.rank.toFixed(2))).size > 1;
+  const o = obsOf(s, cls, term);
+  const obs = [o.tags.join(', '), o.obs ? mask(o.obs).trim() : ''].filter(Boolean).join(' / ');
+  if (obs) lines.push(`- 학기 관찰: ${obs}`);
+  if (steps.length >= 2 && new Set(steps.map((x) => x.rank.toFixed(2))).size > 1) lines.push(`- 학기 흐름: ${steps.map((x) => x.text).join(' → ')}`);
   const memos = memosOf(s, cls, term).reverse().map((n) => `${fmtMD(n.date)} ${mask(n.text).trim()}`);
-  if (!changed && !memos.length) return null;
-  const bits = [];
-  if (steps.length) bits.push(`수행평가: ${steps.map((x) => x.text).join(' → ')}`);
-  if (memos.length) bits.push(`교사 메모: ${memos.join('; ')}`);
-  return `${studentCode(s)}|${bits.join(' / ')}`;
+  if (memos.length) lines.push(`- 교사 메모: ${memos.join('; ')}`);
+  if (!lines.length) return null;
+  return [`[${studentCode(s)}] 짜임: ${order}`, ...lines].join('\n');
 }
 
-// 이 항목에 넣을 학생과 빠지는 학생 (students 는 작성 대상만)
-export function linesOf(it, cls, term, students) {
+// 프롬프트에 넣을 학생과 빠지는 학생 (students 는 작성 대상만)
+export function linesOf(cls, term, students) {
   const mask = nameMasker(term.year);
-  const idx = Math.max(0, itemsOf(cls, term).findIndex((x) => x.key === it.key));
   const lines = [];
   const missing = [];
   for (const s of students) {
-    const line = resultLine(it, s, cls, term, mask, ORDERS[(s.number + idx * 2) % ORDERS.length]);
+    const line = studentBlock(s, cls, term, mask, ORDERS[s.number % ORDERS.length]);
     if (line) lines.push({ s, line }); else missing.push(s);
   }
   return { lines, missing };
 }
 
-// ---- 프롬프트 글 ----
+// ---- 프롬프트 글: 학생마다 학기 전체를 한 문단으로 ----
 // 규칙은 과세특 작업대에서 실제로 겪은 것: 명사형 종결과 소재 지어내기는 어긴 예를 보여 줘야 지킨다, 상한만 주면 훨씬 짧게 쓴다
-function lengthAndStyle(out, n, upper, lower) {
+export function promptText(cls, term, lines, st = aiSettings()) {
+  const upper = charsOf(Math.max(0, st.bytes - st.reserve));
+  const lower = Math.max(1, Math.floor(upper * 0.95));
+  const assess = S.assessmentsOf(cls, term);
+  const out = [];
+  out.push(`너는 중학교 ${cls.grade}학년 ${cls.subject} 교사를 돕는 조수다.`);
+  out.push(`아래 ${term.year}학년도 ${term.semester}학기 평가 정보와 학생별 기록을 바탕으로, 학생마다 과목별 세부능력 및 특기사항 한 문단을 작성하라.`);
+  out.push('');
+
+  let hasLevels = false;
+  const own = new Set();
+  out.push('[이번 학기 수행평가]');
+  assess.forEach((a, k) => {
+    out.push(`${k + 1}) ${cleanTitle(a.title)}${a.period ? ` (${a.period})` : ''}${a.area ? ` — ${a.area} 영역` : ''}`);
+    if (a.note) out.push(`   ${a.note}`);
+    const codes = (a.standards || []).map(normCode);
+    codes.forEach((c) => { own.add(c); out.push(`   성취기준: ${c} ${standardText(c)}`.trimEnd()); });
+    const rb = a.rubric || {};
+    const crit = a.kind === 'count' ? (rb.elements || []) : (rb.criteria || []).map((c) => c.text);
+    if (crit.length) out.push(`   채점 기준: ${crit.map((c, i) => `${'①②③④⑤⑥⑦⑧⑨⑩'[i] || i + 1} ${c}`).join(' ')}`);
+    const grades = (rb.grades || []).filter((g) => g.desc);
+    if (grades.length) {
+      hasLevels = true;
+      out.push('   성취도별 성취수준:');
+      grades.forEach((g) => out.push(`     ${g.grade}: ${g.desc}`));
+    }
+  });
+  out.push('');
+  const exams = examCodes(cls, term).filter((c) => !own.has(c));
+  if (exams.length) {
+    out.push('[이번 학기에 함께 배운 성취기준 — 정기시험 범위, 참고용]');
+    exams.forEach((c) => out.push(`${c} ${standardText(c)}`.trim()));
+    out.push('');
+  }
+
+  out.push('[작성 규칙]');
+  let n = 1;
   out.push(`${n++}. 학생당 한 문단, 공백 포함 ${lower}자 이상 ${upper}자 이내.`);
   out.push(`   ${upper}자에 최대한 가깝게 쓰라. ${lower}자보다 짧으면 안 된다.`);
   out.push(`${n++}. 모든 문장을 '-함.', '-음.' 꼴 명사형으로 맺어라.`);
@@ -181,116 +250,40 @@ function lengthAndStyle(out, n, upper, lower) {
   out.push('   (X) 발표 자료를 꼼꼼하게 준비하였습니다.');
   out.push('   (X) 발표 자료를 꼼꼼하게 준비하였다.');
   out.push('   (O) 발표 자료를 꼼꼼하게 준비함.');
-  return n;
-}
-
-export function promptText(it, cls, term, lines, share) {
-  const upper = charsOf(share);
-  const lower = Math.max(1, Math.floor(upper * 0.95));
-  const out = [];
-  out.push(`너는 중학교 ${cls.grade}학년 ${cls.subject} 교사를 돕는 조수다.`);
-  out.push(it.type === 'growth'
-    ? '아래 학생별 기록을 바탕으로, 이번 학기 동안의 변화와 성장을 정리하는 과목별 세부능력 및 특기사항 문장을 작성하라.'
-    : '아래 평가 항목에 대한 학생별 과목별 세부능력 및 특기사항 문장을 작성하라.');
-  out.push('');
-
-  let hasLevels = false;
-  out.push('[평가 항목]');
-  if (it.type === 'growth') {
-    out.push(`${term.year}학년도 ${term.semester}학기 ${cls.subject} 수행평가 전체에서 드러난 변화`);
-    out.push('');
-  } else {
-    out.push(`${it.title}${it.a.period ? ` (${it.a.period})` : ''}${it.a.area ? ` — ${it.a.area} 영역` : ''}`);
-    if (it.a.note) out.push(it.a.note);
-    out.push('');
-    out.push('[성취기준]');
-    const own = it.standards.map(normCode);
-    if (own.length) own.forEach((c) => out.push(`${c} ${standardText(c)}`.trim()));
-    else out.push('(정해 둔 성취기준이 없습니다)');
-    out.push('');
-    const exams = examCodes(cls, term).filter((c) => !own.includes(c));
-    if (exams.length) {
-      out.push('[이번 학기에 함께 배운 성취기준 — 정기시험 범위, 참고용]');
-      exams.forEach((c) => out.push(`${c} ${standardText(c)}`.trim()));
-      out.push('');
-    }
-    const rb = it.a.rubric || {};
-    const crit = it.a.kind === 'count' ? (rb.elements || []) : (rb.criteria || []).map((c) => c.text);
-    if (crit.length) {
-      out.push('[채점 기준]');
-      crit.forEach((c, i) => out.push(`${'①②③④⑤⑥⑦⑧⑨⑩'[i] || i + 1} ${c}`));
-      out.push('');
-    }
-    const grades = (rb.grades || []).filter((g) => g.desc);
-    if (grades.length) {
-      hasLevels = true;
-      out.push('[성취도별 성취수준]');
-      grades.forEach((g) => out.push(`${g.grade}: ${g.desc}`));
-      out.push('');
-    }
+  out.push(`${n++}. 학생 기록에 결과가 있는 수행평가는 모두 한 번 이상 다루어라. 빠뜨리면 안 된다.`);
+  out.push('   다만 평가를 하나씩 나열하지 말고 한 편의 글로 이어라. 평가마다 "~활동에서 ~함." 같은 같은 틀을 되풀이하지 마라.');
+  out.push(`${n++}. 학생 묶음 첫 줄의 "짜임:" 순서대로 글을 짜라. 학생마다 짜임이 다르니 글 모양도 달라야 한다.`);
+  out.push('   짜임은 순서만 정한다. 짜임에 있는 요소라도 기록에 없으면 지어내지 말고 빼라.');
+  out.push('   성취기준 문장을 그대로 베끼지 말고 학생의 행동으로 풀어 쓰라.');
+  if (hasLevels) {
+    out.push(`${n++}. 평가마다 학생의 성취도(A~E)에 맞는 "성취도별 성취수준"을 기준으로 서술의 깊이와 범위를 달리하라.`);
+    out.push('   그 기준에 없는 능력을 지어내지 마라.');
+    out.push('   성취수준 문장을 학생마다 말만 바꿔 되풀이하지 마라. 그 학생의 관찰과 맞는 부분만 골라 쓰고, 글의 중심은 관찰 내용에 둔다.');
   }
-
-  out.push('[작성 규칙]');
-  let n = lengthAndStyle(out, 1, upper, lower);
-  if (it.type === 'growth') {
-    out.push(`${n++}. 기록에서 드러난 변화만 쓴다. 결과가 앞보다 나아졌거나 교사 메모에 변화가 적혀 있으면 '처음에는 ~했으나 ~하게 됨'처럼 쓰라.`);
-    out.push('   결과가 낮아졌으면 노력한 점과 앞으로의 과제를 긍정적으로 쓰라. 근거 없이 "크게 성장함"이라고 쓰지 마라.');
-    out.push('   개별 수행평가 활동을 다시 자세히 설명하지 마라. 그 내용은 다른 문장에 이미 있다.');
-  } else {
-    out.push(`${n++}. 학생 줄 끝의 "짜임:" 순서대로 글을 짜라. 학생마다 짜임이 다르니 글 모양도 달라야 한다.`);
-    out.push('   짜임은 순서만 정한다. 짜임에 있는 요소라도 기록에 없으면 지어내지 말고 빼라.');
-    out.push('   성취기준 문장을 그대로 베끼지 말고 학생의 행동으로 풀어 쓰라.');
-    if (hasLevels) {
-      out.push(`${n++}. 학생별 결과의 성취도(A~E)에 맞는 [성취도별 성취수준]을 기준으로 서술의 깊이와 범위를 달리하라.`);
-      out.push('   그 기준에 없는 능력을 지어내지 마라.');
-      out.push('   성취수준 문장을 학생마다 말만 바꿔 되풀이하지 마라. 그 학생의 "관찰:"과 맞는 부분만 골라 쓰고, 글의 중심은 관찰 내용에 둔다.');
-    } else {
-      out.push(`${n++}. 학생별 결과(충족한 기준 · 점수)에 맞춰 서술의 깊이와 범위를 달리하라. 충족하지 못한 기준을 해낸 것처럼 쓰지 마라.`);
-    }
-    out.push(`${n++}. [이번 학기에 함께 배운 성취기준]은 학생 개인의 성취 근거가 아니다. 이 활동과 자연스럽게 이어질 때만 배경으로 짧게 쓰고, 그 기준을 잘 해냈다고 쓰지 마라.`);
-  }
-  out.push(`${n++}. "관찰:" · "교사 메모:"가 있는 학생은 그 내용을 반드시 살려 쓰라. 거기 없는 구체적인 행동은 지어내지 마라.`);
+  out.push(`${n++}. 결과(충족한 기준 · 점수)에 맞춰 서술의 깊이를 달리하라. 충족하지 못한 기준을 해낸 것처럼 쓰지 마라.`);
+  out.push(`${n++}. "관찰:" · "학기 관찰:" · "교사 메모:"가 있는 학생은 그 내용을 반드시 살려 쓰라. 거기 없는 구체적인 행동은 지어내지 마라.`);
+  out.push('   "학기 관찰:"은 특정 활동에 대한 기록이 아니다. 어느 활동에서 그랬다고 단정하지 말고, 학기 전체의 모습으로 쓰거나 자연스러운 곳에 녹여라.');
+  out.push(`${n++}. "학기 흐름:"이나 "교사 메모:"에 변화가 드러난 학생만 성장을 쓰라. 나아졌으면 '처음에는 ~했으나 ~하게 됨'처럼 쓰고,`);
+  out.push('   결과가 낮아졌으면 노력한 점과 앞으로의 과제를 긍정적으로 쓰라. 근거 없이 "크게 성장함"이라고 쓰지 마라.');
+  out.push(`${n++}. [이번 학기에 함께 배운 성취기준]은 학생 개인의 성취 근거가 아니다. 활동과 자연스럽게 이어질 때만 배경으로 짧게 쓰고, 그 기준을 잘 해냈다고 쓰지 마라.`);
   out.push(`${n++}. "우수함", "미흡함", "뛰어남" 같은 평가어만으로 쓰지 말고 관찰된 행동과 결과로 서술하라.`);
-  out.push(`${n++}. 학생마다 문장의 첫 어절을 서로 다르게 하라.`);
-  out.push('   같은 표현으로 시작하는 학생이 둘 이상 있으면 안 된다. 성취도가 같은 학생끼리도 마찬가지다.');
+  out.push(`${n++}. 학생마다 글의 첫 어절을 서로 다르게 하라.`);
+  out.push('   같은 표현으로 시작하는 학생이 둘 이상 있으면 안 된다. 결과가 같은 학생끼리도 마찬가지다.');
   out.push(`${n++}. 학생이 다룬 구체적 소재를 지어내지 마라.`);
   out.push('   주제, 글감, 작품 이름, 대상 이름은 기록에 적힌 것만 쓴다.');
   out.push('   "축구를 소재로", "우리 학교 급식을 예로 들어"처럼 확인되지 않은 소재를 넣으면 안 된다.');
   out.push('   기록에 없으면 "자신이 고른 대상", "관심 있는 주제"처럼 소재를 특정하지 않는 표현을 쓰라.');
-  out.push(`${n++}. 문장에 학번 · 이름 · 성취기준 코드 · 성취도 기호(A~E) · 점수를 쓰지 마라. 주어 없이 쓴다.`);
+  out.push(`${n++}. 글에 학번 · 이름 · 성취기준 코드 · 성취도 기호(A~E) · 점수를 쓰지 마라. 주어 없이 쓴다.`);
   out.push(`${n++}. 교외 활동, 수상, 자격증, 사교육, 가정 환경처럼 기록에 없는 내용은 쓰지 마라.`);
-  out.push(`${n++}. 출력은 각 줄을 "학번|문장" 형식으로만. 학생 한 명이 한 줄이다.`);
+  out.push(`${n++}. 출력은 각 줄을 "학번|글" 형식으로만. 학생 한 명이 한 줄이다. 아래 학생 ${lines.length}명을 모두 써라.`);
   out.push('   설명이나 인사말, 제목을 붙이지 마라.');
   out.push('');
-  out.push(it.type === 'growth' ? '[학생별 기록] 학번|기록' : '[학생별 결과] 학번|성취도 또는 결과|관찰|짜임');
-  lines.forEach((l) => out.push(l.line));
-  return out.join('\n');
+  out.push('[학생별 기록]');
+  lines.forEach((l) => { out.push(l.line); out.push(''); });
+  return out.join('\n').trimEnd();
 }
 
-// 이어 붙인 초안 다듬기: 내용은 그대로, 연결만 자연스럽게
-export function polishPrompt(cls, rows, limitBytes) {
-  const upper = charsOf(limitBytes);
-  const out = [];
-  out.push(`너는 중학교 ${cls.grade}학년 ${cls.subject} 교사를 돕는 조수다.`);
-  out.push('아래 학생별 과목별 세부능력 및 특기사항 초안은 활동별 문장을 이어 붙인 것이라 연결이 매끄럽지 않다. 한 편의 글로 다듬어라.');
-  out.push('');
-  out.push('[다듬기 규칙]');
-  out.push('1. 내용을 더하지 마라. 초안에 없는 활동, 소재, 능력, 평가를 새로 쓰면 안 된다.');
-  out.push('2. 빼지도 마라. 활동마다 드러난 구체적인 행동과 결과는 모두 남긴다. 겹치는 말만 줄인다.');
-  out.push('3. 같은 어미와 같은 낱말이 되풀이되지 않게 문장을 잇고 순서를 다듬어라.');
-  out.push(`4. 학생당 한 문단, 공백 포함 ${upper}자 이내. 초안보다 길게 쓰지 마라.`);
-  out.push("5. 모든 문장을 '-함.', '-음.' 꼴 명사형으로 맺어라. 존댓말과 '-다' 체를 쓰지 마라.");
-  out.push('   (X) 꼼꼼하게 준비하였다.  (O) 꼼꼼하게 준비함.');
-  out.push('6. 학생마다 첫 어절을 서로 다르게 하라.');
-  out.push('7. 학번 · 이름 · 성취기준 코드 · 성취도 기호(A~E) · 점수를 쓰지 마라.');
-  out.push('8. 출력은 각 줄을 "학번|다듬은 글" 형식으로만. 설명이나 인사말을 붙이지 마라.');
-  out.push('');
-  out.push('[초안] 학번|초안');
-  rows.forEach(({ s, text }) => out.push(`${studentCode(s)}|${text.replace(/\s*\n\s*/g, ' ')}`));
-  return out.join('\n');
-}
-
-// ---- AI 결과 읽기: "10112|문장" (별표 · 글머리표 · 전각 세로줄도 받음) ----
+// ---- AI 결과 읽기: "10112|문장" (별표 · 글머리표 · 전각 세로줄 · [10112] 도 받음) ----
 export function parseResult(text, students) {
   const byCode = new Map(students.map((s) => [studentCode(s), s]));
   const got = new Map();
@@ -299,7 +292,7 @@ export function parseResult(text, students) {
   for (const raw of String(text).split('\n')) {
     const line = raw.replace(/^[\s*\-•>#]+/, '').replace(/\*+$/, '').trim();
     if (!line) continue;
-    const m = line.match(/^(\d{3,6})\s*[|｜]\s*(.+)$/);
+    const m = line.match(/^\[?(\d{3,6})\]?\s*[|｜]\s*(.+)$/);
     if (!m) { unread.push(line); continue; }
     const s = byCode.get(m[1]);
     if (!s) { unknown.push(m[1]); continue; }
@@ -307,6 +300,18 @@ export function parseResult(text, students) {
   }
   return { got, unread, unknown };
 }
+
+// AI 글 저장: seteuk.ai 에 원문을 두고(되돌리기용), 선생님이 고친 글(edited)은 overwrite 일 때만 바꾼다
+export async function saveDrafts(cls, term, got, { overwrite = false } = {}) {
+  for (const [studentId, text] of got) {
+    const row = S.seteukOf(studentId, term, cls.subject);
+    const patch = { ai: text };
+    if (overwrite || !row?.edited || !(row?.text || '').trim()) Object.assign(patch, { text, edited: false, polished: false });
+    await S.saveSeteuk(studentId, term, cls.subject, patch);
+  }
+}
+// 되돌릴 AI 글: 새 방식은 seteuk.ai, 예전(항목별) 방식은 항목 문장을 이어 붙인 것
+export const aiTextOf = (row) => row?.ai || Object.values(row?.parts || {}).map((t) => String(t || '').trim()).filter(Boolean).join(' ');
 
 // 앞 두 어절이 같은 학생 찾기 (글자 수로 자르면 '대상을' · '대상의'를 다르게 봐서 놓친다)
 const firstTwo = (t) => String(t).trim().split(/\s+/).slice(0, 2).join(' ');
@@ -360,22 +365,4 @@ export function similarPairs(map) {
     }
   }
   return out;
-}
-
-// ---- 조각 저장 · 초안 조립 ----
-// seteuk.parts{항목 key: 문장}, seteuk.edited: 선생님이 고쳤거나 다듬은 글이면 true (그때부터는 조립해도 덮어쓰지 않음)
-export function assemble(cls, term, parts) {
-  return itemsOf(cls, term).map((it) => (parts?.[it.key] || '').trim()).filter(Boolean).join(' ');
-}
-
-export async function saveParts(cls, term, it, entries) {
-  for (const [studentId, text] of entries) {
-    const row = S.seteukOf(studentId, term, cls.subject);
-    const parts = { ...(row?.parts || {}), [it.key]: text };
-    const patch = { parts };
-    // 초안이 비었거나 지금까지의 항목 문장을 이어 붙인 그대로일 때만 새로 조립한다 (선생님이 쓴 글은 그대로)
-    const untouched = !row?.edited && (!(row?.text || '').trim() || row.text.trim() === assemble(cls, term, row.parts || {}));
-    if (untouched) patch.text = assemble(cls, term, parts);
-    await S.saveSeteuk(studentId, term, cls.subject, patch);
-  }
 }

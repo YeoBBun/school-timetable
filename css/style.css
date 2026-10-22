@@ -536,6 +536,10 @@ tr.row-on td { background: var(--primary-soft); }
 .obs-table td { vertical-align: top; }
 .tag-row { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
 .tag-row .pick-chip { font-size: 12px; padding: 3px 9px; }
+.pick-chip.on.auto { background: var(--primary-soft); color: var(--text); border: 1px dashed var(--primary); }
+.tag-lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.tag-lists label { display: flex; flex-direction: column; gap: 4px; }
+.tag-lists textarea { width: 100%; }
 .obs-note { width: 100%; }
 .big-check { width: 20px; height: 20px; }
 .final-row { border-bottom: 1px solid var(--border); padding: 10px 0; }
