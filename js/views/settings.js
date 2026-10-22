@@ -1,6 +1,7 @@
 // 설정: 탭 세 개 — 기본 설정(교시 수, 수업 요일, 휴업일, 메뉴 · 기능 켜고 끄기, 백업, 로그아웃) · 시간표 · 반 · 학년도 · 학기 · 단원
 import { h, append, toast, showError, confirmDialog, fmtDateLong, todayStr, downloadText } from '../ui.js';
 import * as S from '../store.js';
+import { helpBox } from '../help.js';
 import { signOut } from '../app.js';
 import * as G from '../google.js';
 import timetable from './timetable.js';
@@ -13,6 +14,7 @@ export default function render(root, sub) {
   append(root,
     h('div', { class: 'page-head' }, h('h2', {}, '설정')),
     h('div', { class: 'tabs' }, tabs.map((t) => h('a', { class: `tab ${t.key === cur ? 'active' : ''}`, href: t.key ? `#/settings/${t.key}` : '#/settings' }, t.label))),
+    helpBox(`settings-${cur || 'basic'}`),
     body);
   if (cur === 'timetable') timetable(body);
   else if (cur === 'terms') terms(body);

@@ -6,6 +6,7 @@ import { attachDialog, matLink, unitSelect } from './materials.js';
 import { addRecord, recordDialog, noteDialog, noteItem } from './records.js';
 import { openStickerBoard } from './stickers.js';
 import { eventDialog } from './schedule.js';
+import { helpBox } from '../help.js';
 
 let date = S.view.date; // 보는 날짜 (store 의 view.date 와 같게 둔다 · 학기 고르기가 이걸 옮긴다)
 const drafts = new Map(); // 반 id → 입력 중인 글
@@ -24,18 +25,23 @@ export default function render(root) {
   const off = S.data.days_off.find((d) => d.date === date);
   const slots = off ? [] : S.effectiveSlots(date, weekdayOf(date));
   const isToday = date === todayStr();
+  // 휴대폰에서는 이날 수업이 있는 반을 교시 순으로 먼저 (반 칸이 세로로 길게 이어지므로)
+  const first = (c) => { const p = slots.filter((s) => s.class_id === c.id).map((s) => s.period); return p.length ? Math.min(...p) : 99; };
+  const shown = window.matchMedia('(max-width: 700px)').matches ? [...classes].sort((a, b) => first(a) - first(b)) : classes;
 
   append(root,
     h('div', { class: 'page-head' },
       h('h2', {}, fmtDateLong(date), h('span', { class: 'muted small term-label' }, S.termLabel(term))),
-      h('button', { class: 'btn', title: '전날', onClick: () => showDate(addDays(date, -1)) }, '◀'),
-      isToday ? null : h('button', { class: 'btn', onClick: () => showDate(todayStr()) }, '오늘'),
-      h('button', { class: 'btn', title: '다음 날', onClick: () => showDate(addDays(date, 1)) }, '▶'),
-      h('input', { type: 'date', value: date, onChange: (e) => e.target.value && showDate(e.target.value) })),
+      h('div', { class: 'date-nav' },
+        h('button', { class: 'btn', title: '전날', onClick: () => showDate(addDays(date, -1)) }, '◀'),
+        isToday ? null : h('button', { class: 'btn', onClick: () => showDate(todayStr()) }, '오늘'),
+        h('button', { class: 'btn', title: '다음 날', onClick: () => showDate(addDays(date, 1)) }, '▶'),
+        h('input', { type: 'date', value: date, onChange: (e) => e.target.value && showDate(e.target.value) }))),
+    helpBox('home'),
     timetableBar(slots, off, isToday, classes),
     S.feature('schedule') ? agendaBar() : null,
     classes.length
-      ? h('div', { class: 'class-cols' }, classes.map((c) => classColumn(c, term, slots)))
+      ? h('div', { class: 'class-cols' }, shown.map((c) => classColumn(c, term, slots)))
       : h('div', { class: 'empty' }, `${term.year}학년도에 담당하는 반이 없습니다. '설정 → 시간표 · 반'에서 반을 추가하세요.`));
 
   if (focusClass) {
@@ -154,9 +160,9 @@ function classColumn(cls, term, slots) {
     input,
     recRows.length ? h('div', { class: 'recs' }, recRows) : null,
     h('div', { class: 'col-actions' },
-      h('a', { class: 'btn col-btn', href: `#/class/${cls.id}/groups` }, '👥 조 편성'),
-      S.feature('stickers') ? h('button', { class: 'btn col-btn', onClick: () => openStickerBoard(cls) }, '⭐ 칭찬 스티커') : null,
-      h('button', { class: 'btn col-btn', onClick: () => noteDialog(cls) }, '📝 반 메모')),
+      h('a', { class: 'btn btn-sm col-btn', href: `#/class/${cls.id}/groups`, title: '조 편성' }, '👥 조'),
+      S.feature('stickers') ? h('button', { class: 'btn btn-sm col-btn', onClick: () => openStickerBoard(cls), title: '칭찬 스티커를 TV 화면에 띄우기' }, '⭐ 칭찬') : null,
+      h('button', { class: 'btn btn-sm col-btn', onClick: () => noteDialog(cls), title: '반 메모 쓰기 (숙제 · 걷을 것 등)' }, '📝 메모')),
     notes.length ? h('div', { class: 'notes' }, notes.map((n) => noteItem(n, cls))) : null);
 }
 

@@ -2,6 +2,7 @@
 import { h, append, toast, showError, modal, confirmDialog, fmtSize, fmtMD } from '../ui.js';
 import * as G from '../google.js';
 import * as S from '../store.js';
+import { helpBox } from '../help.js';
 
 const PURPOSE = { lesson: '수업', eval: '평가' };
 // 자료 화면 상태
@@ -350,6 +351,7 @@ export default function render(root) {
     h('div', { class: 'page-head' },
       h('h2', {}, '수업 자료'), h('span', { class: 'muted' }, S.termLabel(term)), subjectTabs, search,
       S.drive.materialsId ? h('a', { class: 'btn', href: G.folderUrl(S.drive.materialsId), target: '_blank', rel: 'noopener' }, '드라이브 폴더 열기') : null),
+    helpBox('materials'),
     upload,
     h('div', { class: 'section-title' }, `${S.termLabel(term)}${subject ? ` ${subject}` : ''} 단원별 자료`),
     listBox);

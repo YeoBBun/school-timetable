@@ -1,6 +1,7 @@
 // 반 화면: 탭으로 기록 · 학생 · 수행평가 · 조 편성 · 칭찬 스티커 · 과세특
 import { h, append, fmtMD, todayStr, classChip, downloadText } from '../ui.js';
 import * as S from '../store.js';
+import { helpBox } from '../help.js';
 import { matLink } from './materials.js';
 import { recordDialog, noteDialog, noteItem } from './records.js';
 import { renderStudentsTab } from './students.js';
@@ -32,6 +33,7 @@ export default function render(root, id, sub) {
       h('h2', { class: 'row' }, classChip(cls, S.classLabel(cls)), h('span', { class: 'muted small' }, [`${S.classYear(cls)}학년도`, cls.subject].filter(Boolean).join(' · '))),
       h('a', { class: 'btn', href: '#/today' }, '← 홈')),
     h('div', { class: 'tabs' }, tabs.map((t) => h('a', { class: `tab ${t === tab ? 'active' : ''}`, href: `#/class/${cls.id}/${t.key}` }, t.label))),
+    helpBox(`class-${tab.key}`),
     body);
   tab.view(body, cls);
 }
