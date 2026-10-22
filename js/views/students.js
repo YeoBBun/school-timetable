@@ -2,7 +2,6 @@
 import { h, append, toast, showError, modal, confirmDialog, todayStr, fmtMD } from '../ui.js';
 import * as S from '../store.js';
 import { readRows } from '../xlsx.js';
-import { showStudent } from './seteuk.js';
 
 const GENDER = { M: '남', F: '여' };
 
@@ -18,21 +17,16 @@ export function renderStudentsTab(root, cls) {
   const stickers = S.feature('stickers');
   const others = S.classesOfYear(S.classYear(cls)).filter((c) => c.id !== cls.id && c.grade === cls.grade && c.room === cls.room);
 
-  const save = (s, patch) => S.update('students', s.id, patch).catch(showError);
+  // 평소에는 글자로만 보여 주고, 번호 · 이름을 누르면 고치기 창
   const rows = list.map((s) => {
     const notes = S.notesOfStudent(s.id);
     return h('tr', {},
-      h('td', {}, h('input', { type: 'number', min: 1, value: s.number, class: 'num-input', 'data-fk': `num-${s.id}`, onChange: (e) => Number(e.target.value) > 0 && save(s, { number: Number(e.target.value) }) })),
-      h('td', {}, h('input', { type: 'text', value: s.name, class: 'name-input', 'data-fk': `name-${s.id}`, onChange: (e) => e.target.value.trim() && save(s, { name: e.target.value.trim() }) })),
-      h('td', {}, h('select', { value: s.gender || '', onChange: (e) => save(s, { gender: e.target.value }) },
-        h('option', { value: '' }, '-'), Object.entries(GENDER).map(([k, v]) => h('option', { value: k }, v)))),
+      h('td', { class: 'clickable', title: '눌러서 고치기 · 지우기', onClick: () => editDialog(s) }, h('strong', {}, s.number)),
+      h('td', { class: 'clickable', title: '눌러서 고치기 · 지우기', onClick: () => editDialog(s) }, s.name),
       stickers ? h('td', { class: 'center' }, String(S.stickerCount(cls.id, s.id, term) || '')) : null,
       h('td', {}, h('div', { class: 'memo-cell' },
         h('button', { class: 'btn btn-sm', onClick: () => studentDialog(s, cls) }, notes.length ? `📝 메모 ${notes.length}` : '📝 메모 쓰기'),
-        notes.length ? h('span', { class: 'small memo-last', onClick: () => studentDialog(s, cls) }, h('span', { class: 'muted' }, `${fmtMD(notes[0].date)} `), notes[0].text) : null)),
-      h('td', { class: 'right nowrap' },
-        h('button', { class: 'btn btn-sm', title: '메모 · 수행평가 · 과세특 초안을 한 화면에', onClick: () => showStudent(cls, s) }, '📋 종합'), ' ',
-        h('button', { class: 'icon-btn danger', title: '학생 삭제', onClick: () => removeStudent(s) }, '✕')));
+        notes.length ? h('span', { class: 'small memo-last', onClick: () => studentDialog(s, cls) }, h('span', { class: 'muted' }, `${fmtMD(notes[0].date)} `), notes[0].text) : null)));
   });
 
   append(root,
@@ -45,10 +39,30 @@ export function renderStudentsTab(root, cls) {
       h('button', { class: 'btn', onClick: () => neisImport(cls) }, '나이스 엑셀로 명단 넣기')),
     list.length
       ? h('div', { class: 'table-wrap' }, h('table', { class: 'table student-table' },
-        h('thead', {}, h('tr', {}, ['번호', '이름', '성별', stickers ? `스티커(${term.semester}학기)` : null, '메모', ''].filter((t) => t != null).map((t) => h('th', {}, t)))),
+        h('thead', {}, h('tr', {}, ['번호', '이름', stickers ? `스티커(${term.semester}학기)` : null, '메모'].filter((t) => t != null).map((t) => h('th', {}, t)))),
         h('tbody', {}, rows)))
-      : h('div', { class: 'empty' }, '아직 학생이 없습니다. 위 버튼으로 직접 넣거나, 나이스에서 내려받은 명렬표 · 과세특 일괄입력 양식 엑셀을 올리세요.'),
-    h('p', { class: 'muted small' }, '성별은 비워 둬도 됩니다. 명단은 학년도 · 학년 · 반마다 하나라서 같은 반의 다른 과목 수업과 함께 씁니다.'));
+      : h('div', { class: 'empty' }, '아직 학생이 없습니다. 위 버튼으로 직접 넣거나, 나이스에서 내려받은 명렬표 · 과세특 일괄입력 양식 엑셀을 올리세요.'));
+}
+
+// 번호 · 이름 고치기, 지우기
+function editDialog(s) {
+  const number = h('input', { type: 'number', min: 1, value: s.number, style: { width: '90px' } });
+  const name = h('input', { type: 'text', value: s.name });
+  modal('학생 고치기', h('div', { class: 'row' }, h('label', {}, '번호', number), h('label', { class: 'grow' }, '이름', name)), [
+    { label: '학생 지우기', danger: true, onClick: () => { removeStudent(s); } },
+    { label: '취소' },
+    {
+      label: '저장', primary: true,
+      onClick: async () => {
+        const n = Number(number.value);
+        const nm = name.value.trim();
+        if (!(n > 0) || !nm) { toast('번호와 이름을 입력하세요.', 'error'); return false; }
+        if (n !== s.number && S.data.students.some((x) => x.id !== s.id && x.year === s.year && x.grade === s.grade && x.room === s.room && x.number === n)) { toast(`${n}번은 이미 있습니다.`, 'error'); return false; }
+        await S.update('students', s.id, { number: n, name: nm }).catch(showError);
+      },
+    },
+  ]);
+  name.focus();
 }
 
 async function removeStudent(s) {

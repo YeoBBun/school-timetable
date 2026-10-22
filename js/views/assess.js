@@ -1,6 +1,7 @@
 // 수행평가: 평가계획서(hwpx) 불러오기, 평가 만들기(학기 · 과목 · 학년), 반별 날짜, 세부 기준 채점 · 관찰 메모, 구글 시트 채점표
 import { h, append, toast, showError, modal, confirmDialog, fmtMD, classChip } from '../ui.js';
 import * as S from '../store.js';
+import { helpBox } from '../help.js';
 import { describeChange, hasResult, gradeSheetId, createGradeSheet, readGradeSheet } from '../gradebook.js';
 import { sheetUrl } from '../google.js';
 import { go } from '../app.js';
@@ -36,6 +37,7 @@ export default function render(root) {
         h('button', { class: 'btn', onClick: () => assessmentDialog(open) }, '수정'),
         h('button', { class: 'btn btn-primary', onClick: () => openGradeSheet(open) }, '📊 구글 시트로 채점'),
         open.sheet_id ? h('button', { class: 'btn btn-primary', onClick: () => importGradeSheet(open) }, '📥 시트에서 가져오기') : null),
+      helpBox('assess-open'),
       open.sheet_id ? h('p', { class: 'muted small' }, "구글 시트에서 채점한 뒤 '📥 시트에서 가져오기'를 누르면 바뀌는 내용을 보여 주고 반영합니다. 학생 명단 · 채점 기준이 바뀌었으면 ",
         h('a', { href: '#', onClick: (e) => { e.preventDefault(); remakeGradeSheet(open); } }, '시트 새로 만들기'), '.') : null,
       scoreBoard(open));
@@ -51,6 +53,7 @@ export default function render(root) {
       view.subject ? h('button', { class: 'btn btn-primary', onClick: () => importPlan(term) }, '📄 평가계획서 올리기') : null,
       view.subject ? h('button', { class: 'btn', onClick: () => editPlan(term) }, '평가계획 보기 · 고치기') : null,
       view.subject ? h('button', { class: 'btn', onClick: () => assessmentDialog(null, { term, subject: view.subject }) }, '+ 새 수행평가') : null),
+    helpBox('assess'),
     !view.subject
       ? h('div', { class: 'empty' }, `${term.year}학년도 담당 반이 없습니다. '설정 → 시간표 · 반'에서 먼저 반을 추가하세요.`)
       : list.length
@@ -390,7 +393,7 @@ export function renderClassAssess(root, cls) {
       cls.grade ? h('button', { class: 'btn btn-primary', onClick: () => assessmentDialog(null, { term, subject: cls.subject }) }, '+ 새 수행평가') : null),
     list.length
       ? list.map((a) => h('div', { class: 'assess-block' },
-        h('div', { class: 'row' }, h('h3', { style: { margin: '0 0 8px' } }, a.title), h('span', { class: 'muted small' }, `만점 ${a.max_score}`),
+        h('div', { class: 'row' }, h('h3', { style: { margin: '0 0 8px' } }, a.title), a.kind === 'grade' ? null : h('span', { class: 'muted small' }, `만점 ${maxScore(a)}`),
           h('span', { class: 'grow' }), h('button', { class: 'btn btn-sm', onClick: () => assessmentDialog(a) }, '수정')),
         scoreTable(a, cls)))
       : h('div', { class: 'empty' }, '이번 학기 수행평가가 없습니다.'));

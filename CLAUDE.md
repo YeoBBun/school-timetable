@@ -19,6 +19,7 @@ js/google.js        Google Identity Services 토큰 로그인 + Drive v3 API (dr
 js/store.js         메모리 DB + 드라이브 저장/동기화 + 조회 도우미
 js/app.js           로그인 화면, 메뉴, 화면 전환(hash 라우팅), 동기화 배지
 js/ui.js            h() DOM 도우미, modal, toast, 날짜 함수
+js/help.js          화면마다 '💡 이렇게 쓰세요' 안내 상자(helpBox(key), 글은 HELP 한곳에). '알겠어요'로 접으면 settings.help_closed[key], 접은 뒤엔 '❓ 이 화면 안내'
 js/views/home.js    첫 화면: 오늘 시간표 + 담당 반 칸(단원 고르기, 한 줄 기록, 반 메모, 최근 기록)
 js/views/records.js 기록 수정 · 반 메모 창 (공용)
 js/views/classpage.js  #/class/<반id>/<탭> 반 화면 탭: records · students · assess · groups · stickers · seteuk
@@ -52,7 +53,7 @@ manifest.webmanifest, sw.js, icons/  휴대폰 '앱으로 설치'(PWA). sw.js �
 - 테이블: classes, timetable_slots, timetable_changes, lessons, materials, lesson_materials, days_off, settings, units, class_notes, folders,
   students, student_notes, assessments, scores, groupings, stickers, events, gcal_map, seteuk, eval_plans
   (2026-10-21 뺀 표: curriculum_items · item_materials(예전 차시 목록), group_rules(짝 규칙). TABLES 에 없는 표는 다음 저장 때 드라이브 파일에서 빠짐. 예전 차시 제목은 `keepOldItemTitles()` 가 기록 memo 로 옮김)
-- **학생**: year · grade · room · number · name · gender('M'|'F'|'') · sample(예전 시험용 예시 학생: 2026-10-21 `dropSampleStudents()` 가 드라이브를 읽은 뒤 지움 — 만들던 이름 그대로인 것만 지우고, 이름을 바꿔 쓴 학생은 표시만 뗌. 모든 기기에서 한 번씩 돈 뒤엔 이 함수도 지워도 됨). 반-과목이 아니라 학년도+학년+반 단위라 국어 · 독서 반이 같은 명단을 씀(`studentsOf(cls)`). 나이스 엑셀은 `parseRoster()` 가 '번호' 또는 '반/번호'(예: '1/12') + '성명/이름' 칸이 있는 줄을 제목 줄로 보고 읽음(학년 · 반 칸이 있으면 그 반만). **실제 나이스 과세특 일괄입력 양식으로 확인함(2026-10-20, 25명).** 학생개인번호는 저장하지 않음.
+- **학생**: year · grade · room · number · name · gender('M'|'F'|'', 2026-10-22 학생 표에서 칸 뺌 — 붙여넣기 · 과세특 머리에만 남음) · sample(예전 시험용 예시 학생: 2026-10-21 `dropSampleStudents()` 가 드라이브를 읽은 뒤 지움 — 만들던 이름 그대로인 것만 지우고, 이름을 바꿔 쓴 학생은 표시만 뗌. 모든 기기에서 한 번씩 돈 뒤엔 이 함수도 지워도 됨). 반-과목이 아니라 학년도+학년+반 단위라 국어 · 독서 반이 같은 명단을 씀(`studentsOf(cls)`). 나이스 엑셀은 `parseRoster()` 가 '번호' 또는 '반/번호'(예: '1/12') + '성명/이름' 칸이 있는 줄을 제목 줄로 보고 읽음(학년 · 반 칸이 있으면 그 반만). **실제 나이스 과세특 일괄입력 양식으로 확인함(2026-10-20, 25명).** 학생개인번호는 저장하지 않음.
 - **수행평가**: assessments(year · semester · subject · grade · title · max_score · dates{반id: 날짜} · note · period · area · standards[] · points · weight · **kind** · **rubric**), scores(assessment_id+student_id · score · grade · checks{기준 번호: true|점수} · special · **note(관찰 메모)** · tags(2026-10-21 하루 쓴 평가별 관찰 낱말, 지금은 프롬프트에만 읽음)). kind: plain(점수 입력) · count(요소 개수 → 점수 표) · criteria(기준별 수준 점수 합) · grade(등급 A~E + 등급별 성취수준 기술, 세부 기준 합으로 등급 자동). 결과 계산은 `rubricResult()`.
 - **평가계획서(hwpx)**(2026-10-20 사용자 학교 양식으로 확인): 수행평가 메뉴 '📄 평가계획서 올리기' → `readHwpxTables` → `parsePlan` → 확인 · 고치기 창 → '앱에 반영'. 표 머리글로 찾음: '학기 단위 성취수준'(→ eval_plans.levels A~E), '평가방법 및 내용'+'성취기준'(연간 계획: 수행 · 과정평가만), '세부평가기준'+'배점'(점수형: ①… 요소면 count, 아니면 criteria, 결시 · 표절은 specials), '등급'+'성취수준기술'(등급형). 다시 올리면 이름 → 학기 · 시기 · 방식이 같은 기존 평가를 고침(앱에서 고친 이름 유지, 결과 유지). 이번 학기(1학년 2학기)는 자유학기 과정평가라 점수보다 **등급 · 관찰 메모** 중심(사용자 요청). 학교 양식은 해마다 거의 같다고 함.
 - **eval_plans**: year · semester · subject · grade · levels{A~E: 학기 단위 성취수준}. `S.planOf(term, subject, grade)`.
@@ -73,7 +74,7 @@ manifest.webmanifest, sw.js, icons/  휴대폰 '앱으로 설치'(PWA). sw.js �
   - 2026-10-21 재검토로 뺀 것: 규칙으로 조립하던 '✨ 초안 재료 넣기', 학기 성취수준 고르기 · '초안에 넣기', 과세특 화면의 스티커 · 조 활동 · 이 반 수업 카드(근거가 못 됨), '초안 모아 엑셀로'(나이스 양식 채우기와 겹침), 정기시험 문장 항목. 2026-10-22: 수행평가별 항목 문장 · 종합 · 성장 항목 · 다듬기 단계 · 나눠 보내기.
 - **과세특 초안**: seteuk(student_id · year · **semester** · subject · text · ai · tags · auto · obs · edited · target, parts · polished · level 은 예전 값(안 씀)), 기본키 student_id+year+semester+subject, `S.seteukOf(학생id, term, 과목)` · `S.saveSeteuk`. 예전 학년도 단위 행(semester 없음)은 `splitSeteukBySemester()` 가 드라이브를 읽은 뒤 학기 행으로 나눔(글 · 항목 문장은 그 학년도 지금 학기로, levels{학기}는 그 학기 행의 level 로). 나이스 양식 채우기는 양식의 '학기' 칸을 따름. 칸을 벗어날 때(change) 저장, 저장 전 글은 seteuk.js 의 drafts. 글자 수와 나이스 방식 바이트(한글 3, 영문 · 숫자 · 공백 1, 줄바꿈 2)를 보여 줌(한도는 강제하지 않음).
 - **반 메모 vs 학생 메모**(사용자 설명): 반 메모 = 그 반 전체에 대한 것(숙제, 걷을 활동지 등), 학생 메모 = 그 학생의 특이 행동 · 관찰.
-- **반 메모 · 학생 메모 날짜**: class_notes.date · student_notes.date ('YYYY-MM-DD', 기본 오늘). 예전 반 메모는 `noteDate()` 가 created_at 을 로컬 날짜로 바꿔 씀. 학생 표의 메모 칸에 '📝 메모 쓰기' 버튼 + 최근 메모(날짜).
+- **반 메모 · 학생 메모 날짜**: class_notes.date · student_notes.date ('YYYY-MM-DD', 기본 오늘). 예전 반 메모는 `noteDate()` 가 created_at 을 로컬 날짜로 바꿔 씀. 학생 표의 메모 칸에 '📝 메모 쓰기' 버튼 + 최근 메모(날짜). 학생 표는 글자로만 보이고 번호 · 이름을 누르면 고치기 · 지우기 창(2026-10-22, 예전엔 칸마다 입력칸 · 성별 · '📋 종합' · ✕).
 - **칭찬 스티커**: stickers(class_id · student_id · date · reason · n). 학기마다 셈. 이유 버튼은 settings.sticker_reasons.
 - **기능 켜고 끄기**(2026-10-21 사용자 요청): settings.features{schedule · search · stickers}, `S.feature(key)`(기본: 일정 · 찾기 꺼짐, 스티커 켜짐). 끄면 화면에서만 숨김(데이터 유지). 일정 · 찾기는 메뉴에서 빠지고 주소로 와도 홈(app.js ROUTES 의 feature), 일정을 끄면 홈의 '다가오는 일정' 줄도 숨기고 반 칸에는 수행평가만. 스티커를 끄면 홈 버튼 · 반 탭 · 학생 표 칸 · 과세특 카드 숨김.
 - **일정**: events(date · title · class_id · note) + 수행평가 날짜 → `S.agenda(from, to)`. 구글 캘린더는 scope `calendar.app.created`(앱이 만든 캘린더만), settings.gcal_id. 사용자가 콘솔에서 Calendar API 사용 + 범위 추가를 해야 함(아직 안 함).
@@ -98,6 +99,7 @@ manifest.webmanifest, sw.js, icons/  휴대폰 '앱으로 설치'(PWA). sw.js �
 - **자료는 기록에 붙입니다**(lesson_materials). 같은 자료를 여러 반에 쓰면 연결만 여러 개.
 - **시간표**: 위에서 반(붓)을 고르고 칸을 클릭하거나 드래그해서 칠합니다(pointer 이벤트).
 - **휴대폰**(2026-10-20 사용자: 안드로이드, 인터넷 앱 탭으로 여는 게 거슬림): 앱으로 설치(PWA, display standalone). 700px 이하에서 메뉴는 아래 탭, 위에는 앱 이름 · 학기 · 저장 상태(다시 연결 버튼), 창은 아래에서 올라옴. 토큰 1시간 만료는 서버가 없어 그대로(다시 연결 한 번).
+- **화면 단순화 · 안내**(2026-10-22 사용자 요청: '처음 쓰는 사람도 쉽게'): 화면마다 helpBox(홈 · 수업 자료 · 수행평가(목록 · 채점) · 설정 세 탭 · 반 화면 탭마다, 과세특 마법사는 자체 단계 안내라 없음). 단추 이름을 안내 글에 그대로 쓰므로 **단추 이름을 바꾸면 help.js 도 고칠 것**. 홈 반 칸의 조 편성 · 칭찬 스티커 · 반 메모 큰 단추(10/17 요청)는 한 줄 작은 단추(👥 조 · ⭐ 칭찬 · 📝 메모)로. 휴대폰 홈은 날짜 단추를 한 줄(.date-nav)로, 이날 수업 있는 반을 교시 순으로 먼저. 반 화면 수행평가 탭의 등급형은 '만점'을 안 보임.
 - 화면 갱신: 다른 기기에서 온 변경(remote)은 사용자가 입력 중이거나 모달이 열려 있으면 미뤘다가 반영합니다.
 
 ## 현재 상태 (2026-10-16 기준)

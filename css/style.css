@@ -386,8 +386,9 @@ a.tab.active { color: #fff; }
 .chip .dot { flex-shrink: 0; }
 
 /* 첫 화면 반 칸 버튼 (조 편성 · 칭찬 스티커 · 반 메모) */
-.col-actions { display: flex; flex-direction: column; gap: 6px; }
-.col-btn { padding: 9px 12px; font-size: 15px; font-weight: 600; text-align: left; display: block; width: 100%; }
+.col-actions { display: flex; gap: 6px; }
+.col-btn { flex: 1; min-width: 0; padding: 6px 4px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.date-nav { display: flex; align-items: center; gap: 8px; }
 
 /* 칭찬 스티커: 부여 · 삭제 묻기 (TV 화면 안) */
 .tv-ask { position: fixed; inset: 0; background: rgba(5, 8, 14, .7); display: flex; align-items: center; justify-content: center; z-index: 5; }
@@ -493,6 +494,9 @@ tr.row-on td { background: var(--primary-soft); }
   #toasts { left: 12px; right: 12px; bottom: calc(64px + env(safe-area-inset-bottom)); }
   .toast { max-width: none; }
   .page-head { gap: 8px; margin-bottom: 14px; }
+  .date-nav { width: 100%; }
+  .date-nav input[type=date] { flex: 1; min-width: 0; }
+  .help-box { padding: 10px 12px; font-size: 13px; }
   .btn { padding: 9px 14px; }
   .class-cols { grid-template-columns: 1fr; }
   .modal-overlay { padding: 0; align-items: flex-end; }
@@ -544,3 +548,14 @@ tr.row-on td { background: var(--primary-soft); }
 .big-check { width: 20px; height: 20px; }
 .final-row { border-bottom: 1px solid var(--border); padding: 10px 0; }
 .final-row textarea { width: 100%; margin-top: 6px; }
+
+/* 화면 안내 상자 (js/help.js) */
+.help-box { background: #fffbea; border: 1px solid #f3dd8c; border-left: 4px solid #f5b400; border-radius: var(--radius); padding: 12px 16px; margin-bottom: 16px; font-size: 14px; line-height: 1.6; }
+.help-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.help-head strong { flex: 1; font-size: 15px; }
+.help-box ol { margin: 8px 0 0; padding-left: 22px; }
+.help-box li + li { margin-top: 2px; }
+.help-tip { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+.help-tip::before { content: '참고 · '; font-weight: 700; }
+.help-reopen { display: flex; justify-content: flex-end; margin: -8px 0 8px; }
+.help-btn { color: var(--muted); }
