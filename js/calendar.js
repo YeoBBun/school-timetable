@@ -1,5 +1,5 @@
 // 구글 캘린더로 보내기: 앱의 일정 · 수행평가 날짜를 내 구글 캘린더의 '수업관리' 캘린더에 맞춘다(앱 → 캘린더 한 방향)
-import * as G from './google.js';
+import * as G from './backend.js';
 import * as S from './store.js';
 import { toast, todayStr, addDays } from './ui.js';
 

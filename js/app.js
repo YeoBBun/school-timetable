@@ -1,4 +1,4 @@
-import * as G from './google.js';
+import * as G from './backend.js';
 import * as S from './store.js';
 import { h, toast, showError, todayStr } from './ui.js';
 import home from './views/home.js';
@@ -44,14 +44,16 @@ function currentRoute() {
 }
 
 const SYNC_LABEL = { on: '드라이브에 저장됨', saving: '저장 중…', error: '저장 실패 · 다시 시도 중', auth: '구글 다시 연결 필요', off: '연결 중…' };
+const LOCAL_LABEL = { on: '폴더에 저장됨', auth: '폴더 다시 열기 필요', off: '여는 중…' };
 
 function syncBadge() {
   const st = S.sync.status;
-  const badge = h('div', { class: `sync sync-${st}`, id: st === 'auth' ? null : 'sync-badge', title: S.sync.message || '구글 드라이브의 수업관리 폴더에 자동으로 저장됩니다' },
-    h('span', { class: 'dot' }), SYNC_LABEL[st] || st);
+  const local = G.isLocal();
+  const badge = h('div', { class: `sync sync-${st}`, id: st === 'auth' ? null : 'sync-badge', title: S.sync.message || (local ? `이 컴퓨터의 '${G.folderName()}' 폴더 안 '수업관리' 폴더에 자동으로 저장됩니다` : '구글 드라이브의 수업관리 폴더에 자동으로 저장됩니다') },
+    h('span', { class: 'dot' }), (local && LOCAL_LABEL[st]) || SYNC_LABEL[st] || st);
   if (st !== 'auth') return badge;
   return h('div', { id: 'sync-badge' }, badge,
-    h('button', { class: 'btn btn-sm btn-primary', style: { marginTop: '6px' }, onClick: reconnect }, '다시 연결'));
+    h('button', { class: 'btn btn-sm btn-primary', style: { marginTop: '6px' }, onClick: reconnect }, local ? '폴더 다시 열기' : '다시 연결'));
 }
 
 // 로그인이 만료되면(약 1시간) 버튼을 눌러 다시 연결하고 밀린 저장을 이어서 한다
@@ -170,13 +172,18 @@ S.onChange(({ remote }) => {
 });
 
 // ---- 로그인 ----
+// 구글로 로그인(드라이브 저장) 또는 로그인 없이 이 PC 폴더에 저장
 function loginView(message) {
+  // 로컬 폴더로 쓰던 브라우저에서 권한만 다시 물어야 할 때
+  if (G.isLocal() && G.hasFolder()) return reopenView(message);
   const btn = h('button', {
     class: 'btn btn-primary btn-block',
     onClick: async () => {
       btn.disabled = true;
       btn.textContent = '구글 로그인 창을 확인하세요…';
       try {
+        G.setMode('google');
+        await G.init();
         await G.signIn(!!S.settings().gcal_id);
         await onSignedIn();
       } catch (err) {
@@ -192,7 +199,58 @@ function loginView(message) {
       h('p', { class: 'muted' }, '반별 진도 · 시간표 · 수업 자료'),
       message ? h('div', { class: 'banner', style: { margin: 0 } }, message) : null,
       btn,
-      h('p', { class: 'muted small' }, "모든 기록과 수업 자료는 내 구글 드라이브의 '수업관리' 폴더에 저장됩니다. 앱은 그 폴더에만 접근합니다."))));
+      h('p', { class: 'muted small' }, "모든 기록과 수업 자료는 내 구글 드라이브의 '수업관리' 폴더에 저장됩니다. 앱은 그 폴더에만 접근합니다. 학교 · 집 · 휴대폰에서 함께 쓸 수 있습니다."),
+      h('div', { class: 'login-or' }, '또는'),
+      localChoice())));
+  viewEl = null;
+}
+
+// 로그인 없이: 이 PC 의 폴더를 골라 그 안에 '수업관리' 폴더를 만든다
+function localChoice() {
+  if (!G.localSupported()) {
+    return h('p', { class: 'muted small' }, '로그인 없이 이 컴퓨터 폴더에 저장하려면 PC의 크롬이나 엣지에서 여세요.');
+  }
+  const btn = h('button', {
+    class: 'btn btn-block',
+    onClick: async () => {
+      try {
+        G.setMode('local');
+        await G.pickFolder();
+        await onSignedIn();
+      } catch (err) {
+        G.setMode('google');
+        showError(err);
+      }
+    },
+  }, '📁 로그인 없이 이 컴퓨터 폴더에 저장');
+  return h('div', {},
+    btn,
+    h('div', { class: 'banner', style: { margin: '10px 0 0', textAlign: 'left' } },
+      h('strong', {}, '폴더를 고르기 전에 꼭 읽어 주세요'),
+      h('ul', { style: { margin: '6px 0 0', paddingLeft: '18px' } },
+        h('li', {}, '이 컴퓨터에서만 쓸 수 있습니다(다른 PC · 휴대폰 안 됨, 구글 시트 채점 · 캘린더 안 됨).'),
+        h('li', {}, h('strong', {}, "학교 PC는 껐다 켜면 원래대로 돌아가는(복원) 경우가 많습니다. 바탕화면 · 내 문서 말고 D 드라이브나 USB 의 폴더를 고르세요.")),
+        h('li', {}, "고른 폴더 안에 '수업관리' 폴더가 생기고 거기에 저장됩니다. 가끔 '설정 → 백업 파일 내려받기'로 따로 보관하세요."))));
+}
+
+// 로컬 폴더: 브라우저가 권한을 다시 물을 때 (버튼을 눌러야 물을 수 있다)
+function reopenView(message) {
+  const btn = h('button', {
+    class: 'btn btn-primary btn-block',
+    onClick: async () => {
+      try {
+        await G.signIn();
+        await onSignedIn();
+      } catch (err) { showError(err); }
+    },
+  }, `📁 '${G.folderName()}' 폴더 다시 열기`);
+  app.replaceChildren(h('div', { class: 'login-wrap' },
+    h('div', { class: 'login-card' },
+      h('h1', {}, '수업관리'),
+      message ? h('div', { class: 'banner', style: { margin: 0 } }, message) : null,
+      btn,
+      h('p', { class: 'muted small' }, "브라우저가 '이 폴더를 수정하도록 허용할까요?'라고 물으면 '허용'(가능하면 '방문할 때마다 허용')을 누르세요."),
+      h('button', { class: 'btn btn-sm', onClick: async () => { await G.signOut(); G.setMode('google'); loginView(); } }, '다른 방식으로 시작하기'))));
   viewEl = null;
 }
 
@@ -215,7 +273,7 @@ async function onSignedIn() {
     try { await S.loadAll(); } catch (err) { S.handleSyncError(err); }
     return;
   }
-  app.replaceChildren(h('div', { class: 'loading' }, '구글 드라이브에서 불러오는 중…'));
+  app.replaceChildren(h('div', { class: 'loading' }, G.isLocal() ? '폴더에서 불러오는 중…' : '구글 드라이브에서 불러오는 중…'));
   viewEl = null;
   try {
     // 이메일 확인과 드라이브 읽기를 동시에
@@ -228,16 +286,17 @@ async function onSignedIn() {
   } catch (err) {
     S.session.user = null;
     console.error(err);
-    loginView(err.code === 'auth' ? '구글 로그인이 만료되었습니다. 다시 로그인해 주세요.' : `불러오지 못했습니다: ${err.message}`);
+    loginView(err.code === 'auth' ? (G.isLocal() ? err.message : '구글 로그인이 만료되었습니다. 다시 로그인해 주세요.') : `불러오지 못했습니다: ${err.message}`);
   }
 }
 
 export async function signOut() {
   if (S.hasUnsaved()) await S.save();
-  G.signOut();
+  await G.signOut();
   S.session.user = null;
   S.stopSync();
   S.clearData();
+  G.setMode('google');
   loginView();
 }
 

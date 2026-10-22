@@ -1,7 +1,7 @@
 // 구글 시트 채점표: 평가 하나를 반별 시트로 만들어(목록 고르기 · 자동 점수 · 평균) 드라이브에 올리고, 채점한 시트를 다시 읽어 앱에 넣을 내용을 만든다
 import * as S from './store.js';
 import { KINDS, GRADES, rubricResult, maxScore } from './evalplan.js';
-import * as G from './google.js';
+import * as G from './backend.js';
 import { loadXLSX, workbookBlob } from './xlsx.js';
 
 const MARKS = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮';

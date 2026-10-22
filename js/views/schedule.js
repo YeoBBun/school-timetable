@@ -1,7 +1,7 @@
 // 일정: 반별 수행평가 날짜 + 직접 넣은 수업 관련 일정, 그리고 구글 캘린더 연결
 import { h, append, toast, showError, modal, todayStr, addDays, fmtDateLong, classChip } from '../ui.js';
 import * as S from '../store.js';
-import * as G from '../google.js';
+import * as G from '../backend.js';
 import * as Cal from '../calendar.js';
 import { go } from '../app.js';
 
@@ -41,6 +41,7 @@ export function agendaList(items, muted = false) {
 }
 
 function calendarCard() {
+  if (G.isLocal()) return h('div', { class: 'card' }, h('h3', {}, '구글 캘린더'), h('p', { class: 'muted small' }, '구글 캘린더 연결은 구글로 로그인해서 쓸 때만 됩니다.'));
   const on = Cal.connected();
   const connect = async (e) => {
     e.target.disabled = true;
