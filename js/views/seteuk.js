@@ -6,7 +6,7 @@ import { go } from '../app.js';
 import { studentDialog } from './students.js';
 import { openWorkbook, saveWorkbook } from '../xlsx.js';
 import { rubricResult, maxScore, toNoun } from '../evalplan.js';
-import { byteLen, assemble, aiSettings, evidenceOf, EVIDENCE_LABEL, targetsOf } from '../seteukAI.js';
+import { byteLen, aiTextOf, aiSettings, evidenceOf, EVIDENCE_LABEL, targetsOf } from '../seteukAI.js';
 import { renderSeteukAI, requirementBadge } from './seteukAI.js';
 
 const picked = new Map(); // 반 id → 보고 있는 학생 id
@@ -117,7 +117,7 @@ function draftCard(s, cls, d) {
     try {
       const text = ta.value;
       if (text === (seteukOf(s, d.term, d.subject)?.text || '')) { drafts.delete(key); return update(); }
-      // 직접 고친 초안은 AI 항목 문장을 다시 넣어도 덮어쓰지 않는다
+      // 직접 고친 초안은 AI 글을 다시 넣을 때 물어본 뒤에만 바꾼다
       await S.saveSeteuk(s.id, d.term, d.subject, { text, edited: true });
       drafts.delete(key);
       update();
@@ -128,15 +128,14 @@ function draftCard(s, cls, d) {
     h('div', { class: 'row', style: { marginBottom: '8px' } },
       h('h3', { style: { margin: 0 } }, '세특 초안'), state, h('span', { class: 'grow' }), counter,
       h('button', { class: 'btn btn-sm', onClick: () => save() }, '저장'),
-      row?.edited && row?.parts && Object.keys(row.parts).length ? h('button', {
-        class: 'btn btn-sm', title: 'AI 항목 문장을 차례대로 이어 붙인 글로 되돌립니다',
+      row?.edited && aiTextOf(row) && aiTextOf(row) !== (row.text || '') ? h('button', {
+        class: 'btn btn-sm', title: 'AI가 처음 쓴 글로 되돌립니다',
         onClick: async () => {
-          if (!await confirmDialog('고쳐 쓴 초안을 버리고 AI 항목 문장을 이어 붙인 글로 되돌릴까요?', { okLabel: '되돌리기' })) return;
+          if (!await confirmDialog('고쳐 쓴 초안을 버리고 AI가 처음 쓴 글로 되돌릴까요?', { okLabel: '되돌리기' })) return;
           drafts.delete(key);
-          await S.saveSeteuk(s.id, d.term, d.subject, { text: assemble(cls, d.term, row.parts), edited: false, polished: false }).catch(showError);
+          await S.saveSeteuk(s.id, d.term, d.subject, { text: aiTextOf(row), edited: false, polished: false }).catch(showError);
         },
       }, '고친 것 되돌리기') : null,
-      row?.polished ? h('span', { class: 'badge' }, '다듬음') : null,
       h('button', {
         class: 'btn btn-sm',
         onClick: () => navigator.clipboard.writeText(ta.value).then(() => toast('복사했습니다. 나이스에 붙여넣으세요.', 'ok'), () => toast('복사하지 못했습니다.', 'error')),
