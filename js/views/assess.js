@@ -3,7 +3,7 @@ import { h, append, toast, showError, modal, confirmDialog, fmtMD, classChip } f
 import * as S from '../store.js';
 import { helpBox } from '../help.js';
 import { describeChange, hasResult, gradeSheetId, createGradeSheet, readGradeSheet } from '../gradebook.js';
-import { sheetUrl } from '../google.js';
+import { sheetUrl, isLocal } from '../backend.js';
 import { go } from '../app.js';
 import { KINDS, GRADES, rubricResult, maxScore, parsePlan } from '../evalplan.js';
 import { readHwpxTables } from '../hwpx.js';
@@ -35,10 +35,10 @@ export default function render(root) {
         h('h2', {}, open.title), h('span', { class: 'muted small' }, [S.termLabel(open), open.subject, `${open.grade}학년`, KINDS[open.kind || 'plain'], open.period].filter(Boolean).join(' · ')),
         h('button', { class: 'btn', onClick: () => { view.openId = ''; rerender(); } }, '← 목록'),
         h('button', { class: 'btn', onClick: () => assessmentDialog(open) }, '수정'),
-        h('button', { class: 'btn btn-primary', onClick: () => openGradeSheet(open) }, '📊 구글 시트로 채점'),
-        open.sheet_id ? h('button', { class: 'btn btn-primary', onClick: () => importGradeSheet(open) }, '📥 시트에서 가져오기') : null),
+        isLocal() ? null : h('button', { class: 'btn btn-primary', onClick: () => openGradeSheet(open) }, '📊 구글 시트로 채점'),
+        open.sheet_id && !isLocal() ? h('button', { class: 'btn btn-primary', onClick: () => importGradeSheet(open) }, '📥 시트에서 가져오기') : null),
       helpBox('assess-open'),
-      open.sheet_id ? h('p', { class: 'muted small' }, "구글 시트에서 채점한 뒤 '📥 시트에서 가져오기'를 누르면 바뀌는 내용을 보여 주고 반영합니다. 학생 명단 · 채점 기준이 바뀌었으면 ",
+      open.sheet_id && !isLocal() ? h('p', { class: 'muted small' }, "구글 시트에서 채점한 뒤 '📥 시트에서 가져오기'를 누르면 바뀌는 내용을 보여 주고 반영합니다. 학생 명단 · 채점 기준이 바뀌었으면 ",
         h('a', { href: '#', onClick: (e) => { e.preventDefault(); remakeGradeSheet(open); } }, '시트 새로 만들기'), '.') : null,
       scoreBoard(open));
     return;
@@ -265,8 +265,8 @@ export function scoreTable(a, cls) {
       kind === 'grade' && (rb.criteria || []).length
         ? h('label', { class: 'inline small' }, h('input', { type: 'checkbox', checked: showDetail, onChange: (e) => { if (e.target.checked) detailOpen.add(a.id); else detailOpen.delete(a.id); go(location.hash.slice(2)); } }), '세부 기준으로 채점')
         : null,
-      h('button', { class: 'btn btn-sm', title: '이 평가의 모든 반 채점표(구글 시트)', onClick: () => openGradeSheet(a) }, '📊 구글 시트로 채점'),
-      a.sheet_id ? h('button', { class: 'btn btn-sm', onClick: () => importGradeSheet(a) }, '📥 시트에서 가져오기') : null),
+      isLocal() ? null : h('button', { class: 'btn btn-sm', title: '이 평가의 모든 반 채점표(구글 시트)', onClick: () => openGradeSheet(a) }, '📊 구글 시트로 채점'),
+      a.sheet_id && !isLocal() ? h('button', { class: 'btn btn-sm', onClick: () => importGradeSheet(a) }, '📥 시트에서 가져오기') : null),
     rubricGuide(a),
     h('div', { class: 'table-wrap' }, h('table', { class: 'table score-table' },
       h('thead', {}, h('tr', {}, head.map((t, k) => h('th', { title: kind === 'count' && k >= 2 && k < 2 + (rb.elements || []).length ? rb.elements[k - 2] : (rb.criteria || [])[k - 2]?.text || '' }, t)))),

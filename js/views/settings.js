@@ -3,7 +3,7 @@ import { h, append, toast, showError, confirmDialog, fmtDateLong, todayStr, down
 import * as S from '../store.js';
 import { helpBox } from '../help.js';
 import { signOut } from '../app.js';
-import * as G from '../google.js';
+import * as G from '../backend.js';
 import timetable from './timetable.js';
 import terms from './terms.js';
 
@@ -107,16 +107,23 @@ function general(root) {
             h('span', {}, h('strong', {}, label), h('span', { class: 'muted small' }, ` — ${desc}`))))),
         h('div', { class: 'card' },
           h('h3', {}, '데이터'),
-          h('p', { class: 'muted small', style: { marginTop: 0 } }, "모든 기록은 구글 드라이브 '수업관리' 폴더의 '수업관리-데이터.json' 파일에 자동으로 저장됩니다. 따로 백업해 두려면 아래에서 내려받으세요. (수업 자료 파일은 '수업 자료' 폴더에 있습니다)"),
+          G.isLocal()
+            ? h('p', { class: 'muted small', style: { marginTop: 0 } }, `모든 기록은 이 컴퓨터의 '${G.folderName()}' 폴더 안 '수업관리' 폴더의 '수업관리-데이터.json' 파일에 자동으로 저장됩니다(수업 자료는 '수업 자료' 폴더). `,
+              h('strong', {}, '이 컴퓨터가 고장 나거나 초기화되면 사라지므로, 가끔 백업 파일을 내려받아 USB 등에 따로 보관하세요.'))
+            : h('p', { class: 'muted small', style: { marginTop: 0 } }, "모든 기록은 구글 드라이브 '수업관리' 폴더의 '수업관리-데이터.json' 파일에 자동으로 저장됩니다. 따로 백업해 두려면 아래에서 내려받으세요. (수업 자료 파일은 '수업 자료' 폴더에 있습니다)"),
           h('div', { class: 'row' },
             h('button', { class: 'btn', onClick: backup }, '백업 파일 내려받기'),
             h('button', { class: 'btn', onClick: restore }, '백업 파일 불러오기'),
-            S.drive.rootId ? h('a', { class: 'btn', href: G.folderUrl(S.drive.rootId), target: '_blank', rel: 'noopener' }, '드라이브 폴더 열기') : null)),
+            S.drive.rootId && !G.isLocal() ? h('a', { class: 'btn', href: G.folderUrl(S.drive.rootId), target: '_blank', rel: 'noopener' }, '드라이브 폴더 열기') : null)),
         h('div', { class: 'card' },
-          h('h3', {}, '계정'),
+          h('h3', {}, G.isLocal() ? '저장 폴더' : '계정'),
           h('p', { style: { marginTop: 0 } }, S.session.user?.email),
+          G.isLocal() ? h('p', { class: 'muted small' }, "연결을 끊어도 폴더의 데이터는 지워지지 않습니다. 같은 폴더를 다시 고르면 그대로 이어서 씁니다. 구글 드라이브로 옮기려면 '백업 파일 내려받기' → 연결 끊기 → 구글로 로그인 → '백업 파일 불러오기'.") : null,
           h('button', {
             class: 'btn btn-danger',
-            onClick: async () => { if (await confirmDialog('로그아웃할까요?', { okLabel: '로그아웃' })) signOut(); },
-          }, '로그아웃')))));
+            onClick: async () => {
+              const local = G.isLocal();
+              if (await confirmDialog(local ? '이 브라우저에서 폴더 연결을 끊을까요?\n(폴더의 데이터는 그대로 남습니다)' : '로그아웃할까요?', { okLabel: local ? '연결 끊기' : '로그아웃' })) signOut();
+            },
+          }, G.isLocal() ? '폴더 연결 끊기' : '로그아웃')))));
 }

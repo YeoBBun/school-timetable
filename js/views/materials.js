@@ -1,6 +1,6 @@
 // 수업 자료: 드라이브 '수업 자료/학년도/학기/단원/수업·평가' 폴더로 정리해서 올리고, 수업 기록에 붙인다
 import { h, append, toast, showError, modal, confirmDialog, fmtSize, fmtMD } from '../ui.js';
-import * as G from '../google.js';
+import * as G from '../backend.js';
 import * as S from '../store.js';
 import { helpBox } from '../help.js';
 
@@ -27,12 +27,12 @@ export async function uploadFiles(files, { term, subject = null, unitId = null, 
   const created = [];
   for (let i = 0; i < list.length; i++) {
     const f = list[i];
-    const label = () => `드라이브에 올리는 중 (${i + 1}/${list.length}) ${f.name}`;
+    const label = () => `${G.isLocal() ? '폴더에 넣는 중' : '드라이브에 올리는 중'} (${i + 1}/${list.length}) ${f.name}`;
     const t = toast(label());
     try {
       const up = await G.uploadFile(f, folder, (p) => { t.textContent = `${label()} · ${Math.round(p * 100)}%`; });
       created.push(await S.insert('materials', {
-        name: f.name, kind: 'file', drive_id: up.id, url: up.webViewLink || G.fileViewUrl(up.id), size: f.size, mime: f.type || null,
+        name: f.name, kind: 'file', drive_id: up.id, url: G.isLocal() ? '' : (up.webViewLink || G.fileViewUrl(up.id)), size: f.size, mime: f.type || null,
         year: term.year, semester: term.semester, subject: subject || null, unit_id: unitId || null, purpose, folder_id: folder,
       }));
     } catch (err) {
@@ -41,14 +41,14 @@ export async function uploadFiles(files, { term, subject = null, unitId = null, 
       t.remove();
     }
   }
-  if (created.length) toast(`${created.length}개 파일을 드라이브에 올렸습니다.`, 'ok');
+  if (created.length) toast(`${created.length}개 파일을 ${G.isLocal() ? '폴더에 넣었습니다' : '드라이브에 올렸습니다'}.`, 'ok');
   return created;
 }
 
 export function openMaterial(m, download = false) {
   if (m.kind === 'link') { window.open(m.url, '_blank', 'noopener'); return; }
   if (!m.drive_id) { toast('파일 위치를 찾을 수 없습니다.', 'error'); return; }
-  window.open(download ? G.fileDownloadUrl(m.drive_id) : (m.url || G.fileViewUrl(m.drive_id)), '_blank', 'noopener');
+  G.openFile(m.drive_id, { download, url: m.url, name: m.name }).catch(showError);
 }
 
 export function matLink(m) {
@@ -195,7 +195,7 @@ export function attachDialog(lesson, files = null) {
     modal('자료 올리기', [
       h('div', {}, [...files].map((f) => h('div', {}, `📄 ${f.name}`, h('span', { class: 'muted small' }, ` · ${fmtSize(f.size)}`)))),
       place,
-      h('p', { class: 'muted small' }, `드라이브의 '수업 자료/${term.year}학년도/${term.semester}학기/${subject ? `${subject}/` : ''}단원/수업·평가' 폴더에 들어갑니다.`),
+      h('p', { class: 'muted small' }, `${G.isLocal() ? '폴더' : '드라이브'}의 '수업 자료/${term.year}학년도/${term.semester}학기/${subject ? `${subject}/` : ''}단원/수업·평가' 폴더에 들어갑니다.`),
     ], [
       { label: '취소' },
       { label: '올리고 붙이기', primary: true, onClick: async (close) => { close(); await upload(files); } },
@@ -225,7 +225,7 @@ export function attachDialog(lesson, files = null) {
 
 async function deleteMaterial(m) {
   const used = S.lessonsOfMaterial(m.id).length;
-  const ok = await confirmDialog(`'${m.name}'을(를) 삭제할까요?${used ? `\n붙어 있던 수업 기록 ${used}곳에서도 빠집니다.` : ''}${m.kind === 'file' ? '\n파일은 구글 드라이브 휴지통으로 이동합니다 (30일 안에 되살릴 수 있음).' : ''}`);
+  const ok = await confirmDialog(`'${m.name}'을(를) 삭제할까요?${used ? `\n붙어 있던 수업 기록 ${used}곳에서도 빠집니다.` : ''}${m.kind === 'file' ? (G.isLocal() ? "\n파일은 '수업관리/휴지통' 폴더로 옮깁니다." : '\n파일은 구글 드라이브 휴지통으로 이동합니다 (30일 안에 되살릴 수 있음).') : ''}`);
   if (!ok) return;
   try {
     if (m.kind === 'file' && m.drive_id) await G.trashFile(m.drive_id);
@@ -276,7 +276,7 @@ function editDialog(m) {
 
 async function renameUnitDialog(unit) {
   const name = h('input', { type: 'text', value: unit.name });
-  modal('단원 이름 바꾸기', [h('label', {}, '단원 이름', name), h('p', { class: 'muted small' }, '드라이브 폴더 이름도 함께 바뀝니다.')], [
+  modal('단원 이름 바꾸기', [h('label', {}, '단원 이름', name), h('p', { class: 'muted small' }, G.isLocal() ? '이미 만든 폴더 이름은 그대로 둡니다(앱 안의 이름만 바뀝니다).' : '드라이브 폴더 이름도 함께 바뀝니다.')], [
     { label: '취소' },
     {
       label: '저장', primary: true,
@@ -350,7 +350,7 @@ export default function render(root) {
   append(root,
     h('div', { class: 'page-head' },
       h('h2', {}, '수업 자료'), h('span', { class: 'muted' }, S.termLabel(term)), subjectTabs, search,
-      S.drive.materialsId ? h('a', { class: 'btn', href: G.folderUrl(S.drive.materialsId), target: '_blank', rel: 'noopener' }, '드라이브 폴더 열기') : null),
+      S.drive.materialsId && !G.isLocal() ? h('a', { class: 'btn', href: G.folderUrl(S.drive.materialsId), target: '_blank', rel: 'noopener' }, '드라이브 폴더 열기') : null),
     helpBox('materials'),
     upload,
     h('div', { class: 'section-title' }, `${S.termLabel(term)}${subject ? ` ${subject}` : ''} 단원별 자료`),

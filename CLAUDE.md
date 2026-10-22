@@ -16,6 +16,8 @@
 index.html, css/style.css
 js/config.js        GOOGLE_CLIENT_ID (공개 값, 이미 입력됨)
 js/google.js        Google Identity Services 토큰 로그인 + Drive v3 API (drive.file 권한만)
+js/local.js         로그인 없이 이 PC 폴더에 저장(File System Access API, 크롬 · 엣지 PC만). google.js 와 같은 함수 이름. id = 고른 폴더 기준 경로
+js/backend.js       저장 방식 고르기(localStorage jindo.mode = 'local' | 없음=구글). **다른 파일은 google.js 대신 이걸 import** (G.isLocal() 로 화면 분기)
 js/store.js         메모리 DB + 드라이브 저장/동기화 + 조회 도우미
 js/app.js           로그인 화면, 메뉴, 화면 전환(hash 라우팅), 동기화 배지
 js/ui.js            h() DOM 도우미, modal, toast, 날짜 함수
@@ -90,6 +92,8 @@ manifest.webmanifest, sw.js, icons/  휴대폰 '앱으로 설치'(PWA). sw.js �
 - 삭제 연쇄(cascadeDelete): 반 → 시간표·변경·수업기록·반 메모·스티커·조·일정, 학생 → 메모·점수·스티커·과세특, 수행평가 → 점수, 수업기록 → lesson_materials, 자료 → 연결들, 단원 → 기록·자료의 unit_id 를 null 로.
 - **브라우저 사본(빠른 시작)**: 마지막 데이터와 드라이브 파일 id 를 localStorage `jindo.cache` 에 둡니다. 켜면 사본으로 화면부터 그리고(배지 "연결 중…"), `loadAll()` 이 드라이브 파일을 읽어 `applyRemote` 로 합칩니다. 아는 파일 id 가 있으면 요청 2번(fileMeta → readJson), 없으면 폴더 찾기부터 합니다. 사본의 `dirty` 가 true 면 합친 뒤 저장합니다. 60일 넘은 사본은 버립니다(지운 기록 90일보다 짧게). 로그아웃하면 지웁니다. 토큰이 만료돼도 사본이 있으면 로그인 화면 대신 앱을 보여 주고 배지에 **다시 연결**을 띄웁니다.
 - 로그인 토큰은 약 1시간 동안 localStorage 에 둡니다. 만료되면 AuthError → 배지에 **다시 연결** 버튼이 뜨고, 누르면 `S.resume()` 으로 밀린 저장을 이어서 합니다.
+
+- **로컬 폴더 방식**(2026-10-22 사용자 요청: 동료 국어 교사들이 한 PC에서 로그인 없이 쓰게, 사용자 본인은 구글 그대로): 처음 화면 '📁 로그인 없이 이 컴퓨터 폴더에 저장' → showDirectoryPicker → 핸들은 IndexedDB 'jindo-local'. 고른 폴더 안 '수업관리/수업관리-데이터.json' · '수업관리/수업 자료/…'. 버전 = 파일 lastModified. 권한이 'prompt' 로 돌아오면 reopenView('폴더 다시 열기' 버튼, requestPermission 은 클릭 안에서만). 폴더 이름 바꾸기 · 옮기기는 안 함(경로가 id), 지우기는 '수업관리/휴지통'으로 옮김, 자료 열기는 파일을 읽어 blob 으로(`G.openFile`). 브라우저 사본도 따로(jindo.cache.local). 숨기는 것: 구글 시트 채점 단추, 드라이브 폴더 열기, 캘린더 카드. 로그아웃 = '폴더 연결 끊기'(폴더 데이터는 남음). 학교 PC 복원 프로그램 위험을 처음 화면 · 설정에 크게 안내. 구글로 옮기기는 백업 내려받기 → 불러오기. **테스트**: 헤드리스 크로미움은 로캘이 없으면 OPFS 에 한글 파일 이름을 못 만든다(TypeMismatchError) → `chromium.launch({ env: { LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8' } })`, showDirectoryPicker 를 navigator.storage.getDirectory() 로 바꿔 시험. **실제 윈도우 크롬 · 엣지에서는 아직 안 돌려 봄.**
 
 ### 주요 기능 규칙
 - **보는 학기(엑셀 시트처럼)**: 왼쪽 위 학기 고르기 → `S.setViewTerm(t)` 가 `S.view.date`(홈 날짜)를 그 학기 안(오늘 또는 첫 평일)으로 옮김. `S.viewTerm()` = termOf(view.date). 홈 · 수업 자료 · 수행평가 · 시간표 · 반 화면 탭(수행평가 · 스티커)이 이 학기를 따름. 지금 학기가 아니면 화면 위에 띠. 학기 목록은 `S.allTerms()`(데이터 있는 학기 + 지난 · 이번 · 다음 학기). 새로 고치면 오늘로 돌아감.

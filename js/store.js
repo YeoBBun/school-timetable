@@ -2,7 +2,7 @@
 // 다른 기기에서 바꾼 내용은 30초마다(또는 창으로 돌아올 때) 드라이브 파일을 확인해서 합친다.
 // 켤 때 기다리지 않도록 마지막 데이터를 이 PC 브라우저에 사본으로 두고(로그아웃하면 지움), 화면부터 보여 준 뒤 드라이브와 합친다.
 // 합칠 때는 항목마다 마지막으로 바뀐 시각(_u)이 더 늦은 쪽을 남기고, 지운 항목은 지운 시각(tomb)으로 기억한다.
-import * as G from './google.js';
+import * as G from './backend.js';
 import { todayStr, addDays } from './ui.js';
 
 export const TABLES = ['classes', 'timetable_slots', 'timetable_changes', 'lessons', 'materials', 'lesson_materials', 'days_off', 'settings',
@@ -11,7 +11,8 @@ export const TABLES = ['classes', 'timetable_slots', 'timetable_changes', 'lesso
 const DATA_FILE = '수업관리-데이터.json';
 const POLL_MS = 30_000;
 const TOMB_KEEP_MS = 90 * 24 * 3600 * 1000;
-const CACHE_KEY = 'jindo.cache';
+// 로컬 폴더로 쓸 때는 사본도 따로 (같은 브라우저에서 방식을 바꿔도 섞이지 않게)
+const cacheKey = () => (G.isLocal() ? 'jindo.cache.local' : 'jindo.cache');
 const CACHE_MAX_AGE = 60 * 24 * 3600 * 1000; // 지운 기록(90일)보다 짧게: 오래된 사본이 지운 항목을 되살리지 않도록
 
 // 기본키가 id 가 아닌 테이블
@@ -146,14 +147,14 @@ export function loadAll() {
 function writeCache() {
   if (!session.user) return;
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ at: now(), email: session.user.email, drive, dirty: dirty || saving, tables: data, tomb }));
+    localStorage.setItem(cacheKey(), JSON.stringify({ at: now(), email: session.user.email, drive, dirty: dirty || saving, tables: data, tomb }));
   } catch { /* 저장 불가 환경이면 사본 없이 동작 */ }
 }
 
 // 사본이 있으면 메모리에 올리고 이메일을 돌려준다
 export function loadCache() {
   try {
-    const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
+    const c = JSON.parse(localStorage.getItem(cacheKey()) || 'null');
     if (!c?.tables || now() - c.at > CACHE_MAX_AGE) return null;
     for (const t of TABLES) data[t] = c.tables[t] || [];
     tomb = Object.fromEntries(TABLES.map((t) => [t, c.tomb?.[t] || {}]));
@@ -169,12 +170,12 @@ export function loadCache() {
 window.addEventListener('pagehide', () => { if (dirty || saving) writeCache(); });
 
 export function clearCache() {
-  try { localStorage.removeItem(CACHE_KEY); } catch { /* 무시 */ }
+  try { localStorage.removeItem(cacheKey()); } catch { /* 무시 */ }
 }
 
 // 구글 연결이 끊긴 채로 사본만 보여 줄 때
 export function needAuth() {
-  setStatus('auth', '구글 연결이 만료되었습니다. 다시 연결해 주세요.');
+  setStatus('auth', G.isLocal() ? '폴더 접근을 다시 허락해 주세요.' : '구글 연결이 만료되었습니다. 다시 연결해 주세요.');
 }
 
 function scheduleSave() {

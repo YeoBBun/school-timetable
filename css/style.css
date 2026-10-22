@@ -176,6 +176,11 @@ table { border-collapse: collapse; width: 100%; }
 }
 .login-card h1 { font-size: 24px; }
 .login-card p { margin: 0; }
+.login-card { width: 420px; }
+.login-or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
+.login-or::before, .login-or::after { content: ''; flex: 1; border-top: 1px solid var(--border); }
+.login-card .banner li + li { margin-top: 4px; }
+.login-card .banner { font-size: 13px; line-height: 1.55; }
 
 @media (max-width: 900px) {
   .layout { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
