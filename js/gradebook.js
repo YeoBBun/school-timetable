@@ -201,6 +201,29 @@ export async function readGradeSheet(a, classes, id) {
   return readGradebook(a, classes, await G.exportXlsx(id));
 }
 
+// ---- 로컬 폴더 방식: 같은 채점표를 엑셀 파일로 폴더의 수업관리/채점표/2026학년도 2학기/ 에 (assessments.xlsx_id = 경로) ----
+// 내려받기 · 올리기 대신 늘 같은 자리의 파일을 엑셀로 고치고, 앱이 그 파일을 읽어 온다
+export async function gradeFileId(a) {
+  if (!a.xlsx_id) return null;
+  try { await G.fileMeta(a.xlsx_id); return a.xlsx_id; } catch (err) { if (err.status === 404) return null; throw err; }
+}
+export async function createGradeFile(a, classes) {
+  const root = S.drive.rootId || (await G.ensureFolders()).root;
+  const folder = await G.ensureFolder(`${a.year}학년도 ${a.semester}학기`, await G.ensureFolder('채점표', root));
+  if (a.xlsx_id) await G.trashFile(a.xlsx_id); // 예전 파일은 수업관리/휴지통 으로
+  const blob = await buildGradebook(a, classes);
+  const up = await G.uploadFile(new File([blob], `${fileTitle(a, classes)}.xlsx`), folder);
+  await S.update('assessments', a.id, { xlsx_id: up.id });
+  return up.id;
+}
+export async function readGradeFile(a, classes, id) {
+  return readGradebook(a, classes, await G.readBytes(id));
+}
+// 폴더 밖의 엑셀 파일을 골라 읽을 때
+export async function readGradebookFile(a, classes, file) {
+  return readGradebook(a, classes, await file.arrayBuffer());
+}
+
 function uniqueName(wb, base) {
   let name = base.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31);
   for (let n = 2; wb.SheetNames.includes(name); n++) name = `${base.slice(0, 27)} (${n})`;

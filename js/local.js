@@ -181,6 +181,9 @@ export async function trashFile(id) {
   await (await dirAt(parent)).removeEntry(name);
 }
 
+// 파일 내용 읽기 (엑셀 채점표 가져오기)
+export async function readBytes(id) { return (await (await fileAt(id)).getFile()).arrayBuffer(); }
+
 // 파일 열기 · 내려받기: 브라우저 주소로 열 수 없어서 읽어서 연다
 export async function openFile(id, { download = false, name = '' } = {}) {
   const win = download ? null : window.open('', '_blank');

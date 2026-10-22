@@ -2,8 +2,8 @@
 import { h, append, toast, showError, modal, confirmDialog, fmtMD, classChip } from '../ui.js';
 import * as S from '../store.js';
 import { helpBox } from '../help.js';
-import { describeChange, hasResult, gradeSheetId, createGradeSheet, readGradeSheet } from '../gradebook.js';
-import { sheetUrl, isLocal } from '../backend.js';
+import { describeChange, hasResult, gradeSheetId, createGradeSheet, readGradeSheet, gradeFileId, createGradeFile, readGradeFile, readGradebookFile } from '../gradebook.js';
+import { sheetUrl, isLocal, folderName } from '../backend.js';
 import { go } from '../app.js';
 import { KINDS, GRADES, rubricResult, maxScore, parsePlan } from '../evalplan.js';
 import { readHwpxTables } from '../hwpx.js';
@@ -35,7 +35,8 @@ export default function render(root) {
         h('h2', {}, open.title), h('span', { class: 'muted small' }, [S.termLabel(open), open.subject, `${open.grade}학년`, KINDS[open.kind || 'plain'], open.period].filter(Boolean).join(' · ')),
         h('button', { class: 'btn', onClick: () => { view.openId = ''; rerender(); } }, '← 목록'),
         h('button', { class: 'btn', onClick: () => assessmentDialog(open) }, '수정'),
-        isLocal() ? null : h('button', { class: 'btn btn-primary', onClick: () => openGradeSheet(open) }, '📊 구글 시트로 채점'),
+        isLocal() ? h('button', { class: 'btn btn-primary', onClick: () => openGradeFile(open) }, '📊 엑셀로 채점') : h('button', { class: 'btn btn-primary', onClick: () => openGradeSheet(open) }, '📊 구글 시트로 채점'),
+        isLocal() && open.xlsx_id ? h('button', { class: 'btn btn-primary', onClick: () => importGradeFile(open) }, '📥 엑셀에서 가져오기') : null,
         open.sheet_id && !isLocal() ? h('button', { class: 'btn btn-primary', onClick: () => importGradeSheet(open) }, '📥 시트에서 가져오기') : null),
       helpBox('assess-open'),
       open.sheet_id && !isLocal() ? h('p', { class: 'muted small' }, "구글 시트에서 채점한 뒤 '📥 시트에서 가져오기'를 누르면 바뀌는 내용을 보여 주고 반영합니다. 학생 명단 · 채점 기준이 바뀌었으면 ",
@@ -265,7 +266,8 @@ export function scoreTable(a, cls) {
       kind === 'grade' && (rb.criteria || []).length
         ? h('label', { class: 'inline small' }, h('input', { type: 'checkbox', checked: showDetail, onChange: (e) => { if (e.target.checked) detailOpen.add(a.id); else detailOpen.delete(a.id); go(location.hash.slice(2)); } }), '세부 기준으로 채점')
         : null,
-      isLocal() ? null : h('button', { class: 'btn btn-sm', title: '이 평가의 모든 반 채점표(구글 시트)', onClick: () => openGradeSheet(a) }, '📊 구글 시트로 채점'),
+      isLocal() ? h('button', { class: 'btn btn-sm', title: '이 평가의 모든 반 채점표(엑셀 파일)', onClick: () => openGradeFile(a) }, '📊 엑셀로 채점') : h('button', { class: 'btn btn-sm', title: '이 평가의 모든 반 채점표(구글 시트)', onClick: () => openGradeSheet(a) }, '📊 구글 시트로 채점'),
+      isLocal() && a.xlsx_id ? h('button', { class: 'btn btn-sm', onClick: () => importGradeFile(a) }, '📥 엑셀에서 가져오기') : null,
       a.sheet_id && !isLocal() ? h('button', { class: 'btn btn-sm', onClick: () => importGradeSheet(a) }, '📥 시트에서 가져오기') : null),
     rubricGuide(a),
     h('div', { class: 'table-wrap' }, h('table', { class: 'table score-table' },
@@ -307,6 +309,61 @@ async function importGradeSheet(a) {
     toast('구글 시트를 읽는 중…');
     showImport(a, await readGradeSheet(a, targetClasses(a), id), '구글 시트에서 가져오기');
   } catch (err) { showError(err); }
+}
+
+// ---- 로컬 폴더 방식: 엑셀 채점표 (고른 폴더의 수업관리/채점표/학년도 학기/ 에 하나) ----
+// 브라우저는 엑셀을 직접 열 수 없어서, 파일이 있는 자리를 알려 주고 선생님이 엑셀로 열어 채점 · 저장한다
+async function openGradeFile(a) {
+  try {
+    let id = await gradeFileId(a);
+    const made = !id;
+    if (!id) { toast('엑셀 채점표를 만드는 중…'); id = await createGradeFile(a, targetClasses(a)); }
+    gradeFileDialog(a, id, made);
+  } catch (err) { showError(err); }
+}
+
+function gradeFileDialog(a, id, made) {
+  const parts = id.split('/');
+  const file = parts.pop();
+  modal(made ? '엑셀 채점표를 만들었습니다' : '엑셀 채점표', [
+    h('p', {}, '파일 위치: ', h('strong', {}, `${folderName()} › ${parts.join(' › ')}`), h('br'), '파일 이름: ', h('strong', {}, file)),
+    h('ol', { class: 'small' },
+      h('li', {}, '파일 탐색기(Windows 키 + E)에서 위 폴더를 열고, 파일을 두 번 눌러 엑셀로 여세요.'),
+      h('li', {}, '반마다 시트가 있습니다. 칸을 누르면 고를 수 있는 값이 나옵니다. 다 적으면 저장(Ctrl + S)하고 엑셀을 닫으세요.'),
+      h('li', {}, "앱으로 돌아와 '📥 엑셀에서 가져오기'를 누르면 바뀌는 내용을 보여 주고 반영합니다.")),
+    h('p', { class: 'muted small' }, "파일 이름이나 위치를 바꾸면 앱이 찾지 못합니다. 학생 명단이나 채점 기준이 바뀌었으면 '새로 만들기'(지금 파일은 수업관리/휴지통 으로 옮겨집니다)."),
+  ], [
+    made ? null : {
+      label: '새로 만들기',
+      onClick: async () => {
+        if (!await confirmDialog("지금 앱에 있는 결과로 엑셀 채점표를 새로 만듭니다.\n지금 파일에서 아직 가져오지 않은 채점이 있으면 먼저 '📥 엑셀에서 가져오기'를 하세요.", { okLabel: '새로 만들기', danger: false })) return false;
+        try { gradeFileDialog(a, await createGradeFile(a, targetClasses(a)), true); } catch (err) { showError(err); }
+      },
+    },
+    { label: '확인', primary: true },
+  ].filter(Boolean));
+}
+
+async function importGradeFile(a) {
+  try {
+    const id = await gradeFileId(a);
+    if (!id) return pickGradeFile(a, '폴더에서 엑셀 채점표를 찾지 못했습니다(옮겼거나 이름을 바꿨을 수 있습니다). 채점한 파일을 직접 골라 주세요.');
+    showImport(a, await readGradeFile(a, targetClasses(a), id), '엑셀에서 가져오기');
+  } catch (err) {
+    // 엑셀이 파일을 열고 있으면 못 읽을 수 있다
+    showError(new Error(`엑셀 파일을 읽지 못했습니다. 엑셀에서 저장하고 닫은 뒤 다시 눌러 주세요. (${err.message})`));
+  }
+}
+
+function pickGradeFile(a, message) {
+  toast(message, 'error');
+  const input = h('input', { type: 'file', accept: '.xlsx' });
+  input.addEventListener('change', async () => {
+    const file = input.files[0];
+    if (!file) return;
+    try { showImport(a, await readGradebookFile(a, targetClasses(a), file), '엑셀에서 가져오기'); } catch (err) { showError(err); }
+  });
+  input.click();
 }
 
 // 읽은 채점 결과 → 바뀌는 내용 미리보기 → 반영
